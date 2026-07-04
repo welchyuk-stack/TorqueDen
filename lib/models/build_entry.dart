@@ -8,6 +8,7 @@ class BuildEntry {
     required this.carId,
     required this.title,
     this.body,
+    this.category,
     required this.createdAt,
     this.media = const [],
   });
@@ -16,10 +17,15 @@ class BuildEntry {
   final String carId;
   final String title;
   final String? body;
+
+  /// Optional mod category, e.g. "Exhaust" or "Suspension". Null for a plain
+  /// build update that isn't a specific mod.
+  final String? category;
   final DateTime createdAt;
   final List<PostMedia> media;
 
   bool get hasMedia => media.isNotEmpty;
+  bool get hasCategory => category != null && category!.trim().isNotEmpty;
 
   factory BuildEntry.fromMap(Map<String, dynamic> map) {
     final rawMedia = (map['post_media'] as List?) ?? const [];
@@ -34,6 +40,7 @@ class BuildEntry {
       carId: map['car_id'] as String,
       title: map['title'] as String,
       body: map['body'] as String?,
+      category: map['category'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
       media: media,
     );

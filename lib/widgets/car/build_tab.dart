@@ -10,8 +10,24 @@ import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/post_media_view.dart';
 
-/// Build-log tab for a car: a dated timeline of updates (milestones, fixes,
-/// plans). Self-contained scrollable so it slots straight into a TabBarView.
+/// Preset mod categories offered when logging a build update. An update can be
+/// left uncategorised (a plain milestone/fix/plan) or tagged as a specific mod.
+const List<String> kModCategories = [
+  'Engine / Tune',
+  'Intake',
+  'Exhaust',
+  'Suspension',
+  'Wheels & Tyres',
+  'Brakes',
+  'Exterior',
+  'Interior',
+  'Drivetrain',
+  'Other',
+];
+
+/// Build-log tab for a car: a dated timeline of updates and mods. Each entry is
+/// date-stamped and can carry an optional mod category. Self-contained
+/// scrollable so it slots straight into a TabBarView.
 class BuildTab extends StatefulWidget {
   const BuildTab({super.key, required this.car});
 
@@ -252,14 +268,24 @@ class _BuildEntryCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      _formatDate(entry.createdAt).toUpperCase(),
-                      style: GoogleFonts.inter(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                        letterSpacing: 0.5,
-                        color: AppColors.ember,
-                      ),
+                    Row(
+                      children: [
+                        if (entry.hasCategory) ...[
+                          _CategoryChip(label: entry.category!),
+                          const SizedBox(width: 8),
+                        ],
+                        Flexible(
+                          child: Text(
+                            _formatDate(entry.createdAt).toUpperCase(),
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                              letterSpacing: 0.5,
+                              color: AppColors.ember,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -308,6 +334,34 @@ class _BuildEntryCard extends StatelessWidget {
   }
 }
 
+/// A small pill showing an entry's mod category, e.g. "EXHAUST".
+class _CategoryChip extends StatelessWidget {
+  const _CategoryChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.graphiteRaised,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: GoogleFonts.inter(
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+          color: AppColors.steel,
+        ),
+      ),
+    );
+  }
+}
+
 /// Bottom sheet to add a build-log update. Pops `true` after a successful save.
 class _BuildEntrySheet extends StatefulWidget {
   const _BuildEntrySheet({required this.carId});
@@ -322,6 +376,9 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
   final _formKey = GlobalKey<FormState>();
   final _title = TextEditingController();
   final _body = TextEditingController();
+
+  /// Optional mod category; null means "general update".
+  String? _category;
   bool _saving = false;
 
   // Media chosen but not yet uploaded (held as bytes for preview + upload).
@@ -358,6 +415,7 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
       'car_id': widget.carId,
       'title': _title.text.trim(),
       'body': body.isEmpty ? null : body,
+      'category': _category, // optional mod tag; null for a general update
       'silent': silent, // silent updates stay off followers' feeds
       // created_at uses the table's DB default.
     };
@@ -454,6 +512,27 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                   ),
                 ),
                 const SizedBox(height: 20),
+                DropdownButtonFormField<String?>(
+                  initialValue: _category,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Category (optional)'),
+                  dropdownColor: AppColors.graphiteRaised,
+                  style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                  iconEnabledColor: AppColors.steel,
+                  items: [
+                    DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text(
+                        'General update',
+                        style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 15),
+                      ),
+                    ),
+                    for (final c in kModCategories)
+                      DropdownMenuItem<String?>(value: c, child: Text(c)),
+                  ],
+                  onChanged: _saving ? null : (v) => setState(() => _category = v),
+                ),
+                const SizedBox(height: 14),
                 TextFormField(
                   controller: _title,
                   textCapitalization: TextCapitalization.sentences,

@@ -5,14 +5,13 @@ import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/add_car_screen.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/car/build_tab.dart';
-import 'package:torqueden/widgets/car/mods_tab.dart';
 import 'package:torqueden/widgets/car/posts_tab.dart';
 import 'package:torqueden/widgets/car/specs_tab.dart';
 import 'package:torqueden/widgets/follow_button.dart';
 
-/// A car's profile page: photo + name, then tabs for Specs, Mods and the Build
-/// log. Edits update the view in place; delete pops with `true` so the Garage
-/// drops the car from its list.
+/// A car's profile page: photo + name, then tabs for Specs, the Build log
+/// (dated updates and mods) and Posts. Edits update the view in place; delete
+/// pops with `true` so the Garage drops the car from its list.
 class CarDetailScreen extends StatefulWidget {
   const CarDetailScreen({super.key, required this.car});
 
@@ -112,7 +111,7 @@ class _CarDetailScreenState extends State<CarDetailScreen> {
       ),
       body: SafeArea(
         child: DefaultTabController(
-          length: 4,
+          length: 3,
           child: Column(
             children: [
               Padding(
@@ -129,7 +128,6 @@ class _CarDetailScreenState extends State<CarDetailScreen> {
                 dividerColor: AppColors.hairline,
                 tabs: [
                   Tab(text: 'Specs'),
-                  Tab(text: 'Mods'),
                   Tab(text: 'Build'),
                   Tab(text: 'Posts'),
                 ],
@@ -138,7 +136,6 @@ class _CarDetailScreenState extends State<CarDetailScreen> {
                 child: TabBarView(
                   children: [
                     SpecsTab(car: _car),
-                    ModsTab(car: _car),
                     BuildTab(car: _car),
                     PostsTab(car: _car),
                   ],

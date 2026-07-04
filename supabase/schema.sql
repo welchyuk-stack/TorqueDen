@@ -2,17 +2,22 @@
 -- TorqueDen — live database schema (public schema only)
 --
 -- Captured with `pg_dump --schema-only` from the production Supabase project
--- (Postgres 17.6). This is the source-of-truth snapshot of the DB structure:
--- 9 tables, row-level security enabled on all of them, 21 RLS policies,
--- foreign keys, and the handle_new_user() signup trigger function.
+-- (Postgres 17.6). This is the source-of-truth snapshot of the DB structure.
 --
 -- To recreate the schema on a fresh Supabase/Postgres database:
 --     psql "<connection-string>" -f supabase/schema.sql
 --
+-- Applied migrations (see supabase/migrations/):
+--   0001_car_location.sql        — adds latitude/longitude/location_name to
+--                                  cars (Marketplace-style radius search).
+--   0002_merge_mods_into_build.sql — adds category to build_entries and folds
+--                                  the mods table into the build timeline. The
+--                                  mods table is retained (unused) for rollback.
+--
 -- CAVEATS / not included in this file:
---   * No data — structure only. (The prod DB has ~8 demo cars + related rows.)
+--   * No data — structure only.
 --   * The trigger that fires handle_new_user() lives on `auth.users` (auth
---     schema), which pg_dump did not export here. To fully reproduce profile
+--     schema), which pg_dump did not export here. To reproduce profile
 --     auto-creation on signup, also run:
 --         CREATE TRIGGER on_auth_user_created
 --           AFTER INSERT ON auth.users
@@ -25,7 +30,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict Pd0vv5hXg0OvSj4LeZ3qcN4zpi83ebDQr0GOlrSrt9RtMqfMeMxlCNcgJof2VgE
+\restrict HXZGcz5NHWETIPlok7u83LxEl3uRcnoyC6QLgvbLiooQ3XXxLaa3hz6SpF1L61D
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -86,7 +91,8 @@ CREATE TABLE public.build_entries (
     title text NOT NULL,
     body text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    silent boolean DEFAULT false NOT NULL
+    silent boolean DEFAULT false NOT NULL,
+    category text
 );
 
 
@@ -119,7 +125,10 @@ CREATE TABLE public.cars (
     description text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     chassis_model text,
-    photo_url text
+    photo_url text,
+    latitude double precision,
+    longitude double precision,
+    location_name text
 );
 
 
@@ -312,6 +321,13 @@ CREATE INDEX build_entries_car_id_idx ON public.build_entries USING btree (car_i
 --
 
 CREATE INDEX car_specs_car_id_idx ON public.car_specs USING btree (car_id);
+
+
+--
+-- Name: cars_lat_lng_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cars_lat_lng_idx ON public.cars USING btree (latitude, longitude);
 
 
 --
@@ -842,5 +858,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Pd0vv5hXg0OvSj4LeZ3qcN4zpi83ebDQr0GOlrSrt9RtMqfMeMxlCNcgJof2VgE
+\unrestrict HXZGcz5NHWETIPlok7u83LxEl3uRcnoyC6QLgvbLiooQ3XXxLaa3hz6SpF1L61D
 
