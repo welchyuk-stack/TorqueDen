@@ -1,0 +1,24 @@
+{
+    // Flutter/Dart launch configs. The Dart extension starts the dev server
+    // AND opens the browser itself — so do NOT use a plain "chrome" config.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "TorqueDen (Chrome)",
+            "request": "launch",
+            "type": "dart",
+            "deviceId": "chrome"
+        },
+        {
+            "name": "TorqueDen (Edge)",
+            "request": "launch",
+            "type": "dart",
+            "deviceId": "edge"
+        },
+        {
+            "name": "TorqueDen (default device)",
+            "request": "launch",
+            "type": "dart"
+        }
+    ]
+}
