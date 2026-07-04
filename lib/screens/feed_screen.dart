@@ -10,6 +10,7 @@ import 'package:torqueden/widgets/comments_sheet.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/like_button.dart';
 import 'package:torqueden/widgets/post_media_view.dart';
+import 'package:torqueden/widgets/settings_button.dart';
 import 'package:torqueden/widgets/wordmark.dart';
 
 /// Home feed — the latest *posted* build updates from cars the user follows,
@@ -107,7 +108,10 @@ class _FeedScreenState extends State<FeedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Wordmark()),
+      appBar: AppBar(
+        title: const Wordmark(),
+        actions: const [SettingsButton()],
+      ),
       body: SafeArea(
         child: FutureBuilder<List<_FeedItem>>(
           future: _feedFuture,

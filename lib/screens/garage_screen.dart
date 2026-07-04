@@ -6,6 +6,7 @@ import 'package:torqueden/screens/add_car_screen.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
+import 'package:torqueden/widgets/settings_button.dart';
 
 /// Garage tab — the current user's cars, loaded live from Supabase.
 class GarageScreen extends StatefulWidget {
@@ -74,6 +75,7 @@ class _GarageScreenState extends State<GarageScreen> {
             icon: const Icon(Icons.add),
             tooltip: 'Add a car',
           ),
+          const SettingsButton(),
         ],
       ),
       body: SafeArea(

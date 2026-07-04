@@ -4,7 +4,6 @@ import 'package:torqueden/screens/create_post_screen.dart';
 import 'package:torqueden/screens/discover_screen.dart';
 import 'package:torqueden/screens/feed_screen.dart';
 import 'package:torqueden/screens/garage_screen.dart';
-import 'package:torqueden/screens/settings_screen.dart';
 import 'package:torqueden/widgets/floating_nav_bar.dart';
 
 /// The app shell: a floating glass bottom bar with a centre "+" create button,
@@ -23,9 +22,8 @@ class _MainShellState extends State<MainShell> {
   static const _screens = [
     FeedScreen(),
     DiscoverScreen(),
-    ClubsScreen(),
     GarageScreen(),
-    SettingsScreen(),
+    ClubsScreen(),
   ];
 
   Future<void> _createPost() async {

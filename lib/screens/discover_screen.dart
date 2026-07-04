@@ -6,6 +6,7 @@ import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/services/location_service.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
+import 'package:torqueden/widgets/settings_button.dart';
 
 /// Miles per kilometre — the UI shows distances in miles (UK).
 const double _milesPerKm = 0.621371;
@@ -158,7 +159,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Discover')),
+      appBar: AppBar(
+        title: const Text('Discover'),
+        actions: const [SettingsButton()],
+      ),
       body: SafeArea(
         child: Column(
           children: [
