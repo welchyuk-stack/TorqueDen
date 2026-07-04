@@ -336,6 +336,7 @@ class _FeedCard extends StatelessWidget {
           ],
           const SizedBox(height: 10),
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
               LikeButton(
                 entryId: item.id,

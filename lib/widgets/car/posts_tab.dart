@@ -5,6 +5,8 @@ import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/screens/post_viewer_screen.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
+import 'package:video_player/video_player.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 /// Posts tab for a car profile: an Instagram-style media grid of every photo
 /// and clip the car has posted. Self-contained scrollable so it slots straight
@@ -169,7 +171,7 @@ class _MediaTile extends StatelessWidget {
         fit: StackFit.expand,
         children: [
           if (media.isVideo)
-            const _TileFallback()
+            _VideoThumb(url: media.url)
           else
             Image.network(
               media.url,
@@ -190,6 +192,70 @@ class _MediaTile extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// A video's first frame as a grid thumbnail. The controller is created lazily
+/// once the tile scrolls into view (and disposed when it scrolls off), so the
+/// grid never holds more decoders than are on screen. Shows the frame paused —
+/// playback happens in the fullscreen viewer.
+class _VideoThumb extends StatefulWidget {
+  const _VideoThumb({required this.url});
+
+  final String url;
+
+  @override
+  State<_VideoThumb> createState() => _VideoThumbState();
+}
+
+class _VideoThumbState extends State<_VideoThumb> {
+  final Key _visKey = UniqueKey();
+  VideoPlayerController? _controller;
+  bool _ready = false;
+  bool _error = false;
+  bool _started = false;
+
+  void _onVisibility(VisibilityInfo info) {
+    if (_started || info.visibleFraction <= 0) return;
+    _started = true;
+    final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _controller = c;
+    c.initialize().then((_) {
+      if (!mounted) return;
+      c.setVolume(0);
+      setState(() => _ready = true); // paused on frame 0
+    }).catchError((_) {
+      if (mounted) setState(() => _error = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return VisibilityDetector(
+      key: _visKey,
+      onVisibilityChanged: _onVisibility,
+      child: Builder(
+        builder: (_) {
+          final c = _controller;
+          if (_error || !_ready || c == null) return const _TileFallback();
+          return FittedBox(
+            fit: BoxFit.cover,
+            clipBehavior: Clip.hardEdge,
+            child: SizedBox(
+              width: c.value.size.width,
+              height: c.value.size.height,
+              child: VideoPlayer(c),
+            ),
+          );
+        },
       ),
     );
   }
