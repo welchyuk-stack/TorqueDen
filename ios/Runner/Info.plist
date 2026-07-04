@@ -4,6 +4,13 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- Impeller mis-renders flutter_map raster tiles as blank on the iOS
+	     Simulator. Disable it so the Discover map works during development.
+	     Impeller works with flutter_map on real devices — remove this key to
+	     re-enable it (and the perf win) once you no longer test the map on the
+	     simulator. -->
+	<key>FLTEnableImpeller</key>
+	<false/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>TorqueDen uses your location to tag where a car is based and to show builds near you in Discover.</string>
 	<key>CFBundleDevelopmentRegion</key>
