@@ -12,6 +12,8 @@
 --   0002_merge_mods_into_build.sql — category on build_entries; mods folded in.
 --   0003_post_link_to_mod.sql      — linked_build_entry_id on build_entries so
 --                                    a post can link to a mod in the build list.
+--   0004_fuzz_car_locations.sql    — (data) coarsen car coords to a ~1 km grid
+--                                    for privacy; new writes fuzzed client-side.
 --
 -- CAVEATS / not included:
 --   * No data — structure only.

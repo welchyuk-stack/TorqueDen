@@ -77,13 +77,21 @@ class LocationService {
     }
   }
 
+  /// Coarsens a coordinate to a ~1 km grid (2 decimal places) so a car's exact
+  /// home location is never stored or exposed through the API — a thief can't
+  /// pinpoint it, while "near me" distances stay roughly right.
+  static double fuzz(double coordinate) =>
+      (coordinate * 100).roundToDouble() / 100;
+
   /// Convenience: current position + its reverse-geocoded label in one call.
+  /// The label is resolved from the exact point (accurate town name), but the
+  /// returned coordinates are fuzzed for storage.
   static Future<LocatedPlace> currentPlace() async {
     final pos = await currentPosition();
     final label = await describe(pos.latitude, pos.longitude);
     return LocatedPlace(
-      latitude: pos.latitude,
-      longitude: pos.longitude,
+      latitude: fuzz(pos.latitude),
+      longitude: fuzz(pos.longitude),
       label: label,
     );
   }
