@@ -2,16 +2,30 @@ import 'package:flutter/material.dart';
 import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/theme.dart';
 import 'package:video_player/video_player.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 /// Shows a build update's attached media as a swipeable carousel.
 ///
-/// Images render now; a video shows a placeholder tile until the player lands.
-/// The caller should only build this when [media] is non-empty.
+/// Videos autoplay muted when scrolled into view and pause when they leave
+/// (short-form style); tap a clip to unmute. Set [startMuted] false to open a
+/// clip with sound (e.g. the fullscreen viewer). Build only when [media] is
+/// non-empty.
 class PostMediaView extends StatefulWidget {
-  const PostMediaView({super.key, required this.media, this.aspectRatio = 4 / 3});
+  const PostMediaView({
+    super.key,
+    required this.media,
+    this.aspectRatio = 4 / 3,
+    this.startMuted = true,
+    this.fill = false,
+  });
 
   final List<PostMedia> media;
   final double aspectRatio;
+  final bool startMuted;
+
+  /// Fullscreen mode: fill the parent (no fixed aspect / rounded corners),
+  /// photos fit within the screen, video covers reel-style.
+  final bool fill;
 
   @override
   State<PostMediaView> createState() => _PostMediaViewState();
@@ -32,52 +46,63 @@ class _PostMediaViewState extends State<PostMediaView> {
     final media = widget.media;
     if (media.isEmpty) return const SizedBox.shrink();
 
+    final stack = Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _controller,
+          itemCount: media.length,
+          onPageChanged: (i) => setState(() => _page = i),
+          itemBuilder: (_, i) => _MediaItem(
+            media: media[i],
+            startMuted: widget.startMuted,
+            imageFit: widget.fill ? BoxFit.contain : BoxFit.cover,
+          ),
+        ),
+        if (media.length > 1) ...[
+          Positioned(
+            top: 10,
+            right: 10,
+            child: _Pill(text: '${_page + 1}/${media.length}'),
+          ),
+          Positioned(
+            bottom: 10,
+            left: 0,
+            right: 0,
+            child: _Dots(count: media.length, index: _page),
+          ),
+        ],
+      ],
+    );
+
+    // Fullscreen: fill the parent as-is. Otherwise a rounded, fixed-ratio card.
+    if (widget.fill) return stack;
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
-      child: AspectRatio(
-        aspectRatio: widget.aspectRatio,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            PageView.builder(
-              controller: _controller,
-              itemCount: media.length,
-              onPageChanged: (i) => setState(() => _page = i),
-              itemBuilder: (_, i) => _MediaItem(media: media[i]),
-            ),
-            if (media.length > 1) ...[
-              Positioned(
-                top: 10,
-                right: 10,
-                child: _Pill(text: '${_page + 1}/${media.length}'),
-              ),
-              Positioned(
-                bottom: 10,
-                left: 0,
-                right: 0,
-                child: _Dots(count: media.length, index: _page),
-              ),
-            ],
-          ],
-        ),
-      ),
+      child: AspectRatio(aspectRatio: widget.aspectRatio, child: stack),
     );
   }
 }
 
 class _MediaItem extends StatelessWidget {
-  const _MediaItem({required this.media});
+  const _MediaItem({
+    required this.media,
+    this.startMuted = true,
+    this.imageFit = BoxFit.cover,
+  });
 
   final PostMedia media;
+  final bool startMuted;
+  final BoxFit imageFit;
 
   @override
   Widget build(BuildContext context) {
     if (media.isVideo) {
-      return _VideoItem(url: media.url);
+      return _VideoItem(url: media.url, startMuted: startMuted);
     }
     return Image.network(
       media.url,
-      fit: BoxFit.cover,
+      fit: imageFit,
       errorBuilder: (_, _, _) => const _MediaFallback(),
       loadingBuilder: (context, child, progress) =>
           progress == null ? child : const _MediaFallback(),
@@ -85,30 +110,39 @@ class _MediaItem extends StatelessWidget {
   }
 }
 
-/// Inline video player: tap to play/pause, loops, fills the frame (cover).
+/// Inline short-form video: autoplays muted (looping) once it scrolls into
+/// view, pauses when it leaves. Tap toggles mute; a thin progress bar and a
+/// speaker chip sit on top.
 class _VideoItem extends StatefulWidget {
-  const _VideoItem({required this.url});
+  const _VideoItem({required this.url, this.startMuted = true});
 
   final String url;
+  final bool startMuted;
 
   @override
   State<_VideoItem> createState() => _VideoItemState();
 }
 
 class _VideoItemState extends State<_VideoItem> {
+  final Key _visKey = UniqueKey();
   VideoPlayerController? _controller;
   bool _ready = false;
   bool _error = false;
+  bool _muted = true;
+  bool _visible = false;
 
   @override
   void initState() {
     super.initState();
+    _muted = widget.startMuted;
     final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
     _controller = c;
     c.initialize().then((_) {
       if (!mounted) return;
       c.setLooping(true);
+      c.setVolume(_muted ? 0 : 1);
       setState(() => _ready = true);
+      _syncPlayback();
     }).catchError((_) {
       if (mounted) setState(() => _error = true);
     });
@@ -120,10 +154,31 @@ class _VideoItemState extends State<_VideoItem> {
     super.dispose();
   }
 
-  void _toggle() {
+  /// Play while on screen, pause while off — keeps only visible clips running.
+  void _syncPlayback() {
     final c = _controller;
     if (c == null || !_ready) return;
-    setState(() => c.value.isPlaying ? c.pause() : c.play());
+    if (_visible && !c.value.isPlaying) {
+      c.play();
+    } else if (!_visible && c.value.isPlaying) {
+      c.pause();
+    }
+  }
+
+  void _onVisibility(VisibilityInfo info) {
+    final visible = info.visibleFraction > 0.6;
+    if (visible == _visible) return;
+    _visible = visible;
+    _syncPlayback();
+  }
+
+  void _toggleMute() {
+    final c = _controller;
+    if (c == null || !_ready) return;
+    setState(() {
+      _muted = !_muted;
+      c.setVolume(_muted ? 0 : 1);
+    });
   }
 
   @override
@@ -143,28 +198,61 @@ class _VideoItemState extends State<_VideoItem> {
         child: const CircularProgressIndicator(color: AppColors.ember),
       );
     }
-    return GestureDetector(
-      onTap: _toggle,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ColoredBox(
-            color: Colors.black,
-            child: FittedBox(
-              fit: BoxFit.cover,
-              clipBehavior: Clip.hardEdge,
-              child: SizedBox(
-                width: c.value.size.width,
-                height: c.value.size.height,
-                child: VideoPlayer(c),
+    return VisibilityDetector(
+      key: _visKey,
+      onVisibilityChanged: _onVisibility,
+      child: GestureDetector(
+        onTap: _toggleMute,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ColoredBox(
+              color: Colors.black,
+              child: FittedBox(
+                fit: BoxFit.cover,
+                clipBehavior: Clip.hardEdge,
+                child: SizedBox(
+                  width: c.value.size.width,
+                  height: c.value.size.height,
+                  child: VideoPlayer(c),
+                ),
               ),
             ),
-          ),
-          if (!c.value.isPlaying)
-            const Center(
-              child: Icon(Icons.play_circle_fill, color: Colors.white70, size: 56),
+            // Mute/unmute chip.
+            Positioned(
+              right: 10,
+              bottom: 12,
+              child: Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _muted ? Icons.volume_off : Icons.volume_up,
+                  color: AppColors.cream,
+                  size: 16,
+                ),
+              ),
             ),
-        ],
+            // Slim progress bar along the bottom edge.
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: VideoProgressIndicator(
+                c,
+                allowScrubbing: false,
+                padding: EdgeInsets.zero,
+                colors: const VideoProgressColors(
+                  playedColor: AppColors.ember,
+                  bufferedColor: Colors.white24,
+                  backgroundColor: Colors.white10,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

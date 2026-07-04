@@ -20,9 +20,27 @@ import 'package:torqueden/theme.dart';
 /// );
 /// ```
 class CommentsSheet extends StatefulWidget {
-  const CommentsSheet({super.key, required this.entryId});
+  const CommentsSheet({
+    super.key,
+    required this.entryId,
+    this.fillParent = false,
+    this.onClose,
+    this.reserveKeyboardInset = true,
+  });
 
   final String entryId;
+
+  /// When true, fills the parent's height instead of a fixed 75% sheet — used
+  /// to embed the panel inline (e.g. under a reel).
+  final bool fillParent;
+
+  /// Called by the header's close button instead of popping a route — lets an
+  /// inline host collapse the panel.
+  final VoidCallback? onClose;
+
+  /// Whether to pad the input for the keyboard itself. Set false when the host
+  /// already lifts the panel above the keyboard.
+  final bool reserveKeyboardInset;
 
   @override
   State<CommentsSheet> createState() => _CommentsSheetState();
@@ -130,14 +148,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-    final sheetHeight = MediaQuery.sizeOf(context).height * 0.75;
+    final keyboardInset =
+        widget.reserveKeyboardInset ? MediaQuery.viewInsetsOf(context).bottom : 0.0;
 
-    return SizedBox(
-      height: sheetHeight,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+    final content = Column(
+      mainAxisSize: widget.fillParent ? MainAxisSize.max : MainAxisSize.min,
+      children: [
           _header(),
           const Divider(height: 1, color: AppColors.hairline),
           Expanded(
@@ -186,7 +202,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
           const Divider(height: 1, color: AppColors.hairline),
           _inputBar(keyboardInset),
         ],
-      ),
+      );
+
+    if (widget.fillParent) return content;
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.75,
+      child: content,
     );
   }
 
@@ -205,7 +226,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
           ),
           const Spacer(),
           IconButton(
-            onPressed: () => Navigator.of(context).maybePop(),
+            onPressed: widget.onClose ?? () => Navigator.of(context).maybePop(),
             icon: const Icon(Icons.close, color: AppColors.steel),
             tooltip: 'Close',
           ),

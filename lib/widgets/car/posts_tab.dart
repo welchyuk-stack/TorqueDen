@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
+import 'package:torqueden/screens/post_viewer_screen.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
-import 'package:torqueden/widgets/post_media_view.dart';
 
 /// Posts tab for a car profile: an Instagram-style media grid of every photo
 /// and clip the car has posted. Self-contained scrollable so it slots straight
@@ -49,10 +49,11 @@ class _PostsTabState extends State<PostsTab> {
   }
 
   void _openViewer(PostMedia media) {
-    showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.92),
-      builder: (_) => _MediaViewerDialog(media: media),
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => PostViewerScreen(media: media),
+      ),
     );
   }
 
@@ -208,40 +209,3 @@ class _TileFallback extends StatelessWidget {
   }
 }
 
-/// Fullscreen-ish viewer shown when a tile is tapped: a black, dismissible
-/// dialog with the single piece of media (square) and a close button.
-class _MediaViewerDialog extends StatelessWidget {
-  const _MediaViewerDialog({required this.media});
-
-  final PostMedia media;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: Stack(
-          children: [
-            PostMediaView(media: [media], aspectRatio: 1),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Material(
-                color: Colors.black.withValues(alpha: 0.55),
-                shape: const CircleBorder(),
-                clipBehavior: Clip.antiAlias,
-                child: IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: const Icon(Icons.close, color: AppColors.cream),
-                  tooltip: 'Close',
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
