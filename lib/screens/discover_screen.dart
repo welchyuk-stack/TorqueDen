@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/services/location_service.dart';
 import 'package:torqueden/theme.dart';
-import 'package:torqueden/widgets/discover_map.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 
 /// Miles per kilometre — the UI shows distances in miles (UK).
@@ -28,9 +26,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   late Future<List<Car>> _future;
   String _query = '';
-
-  // Grid vs map view.
-  bool _mapView = false;
 
   // Location search ("near me") state.
   bool _nearMe = false;
@@ -146,13 +141,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
         .showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// Distance label for a car on the map, or null when not searching nearby.
-  String? _mapDistanceLabel(Car car) {
-    if (!_nearMe || _centerLat == null || _centerLng == null) return null;
-    final d = car.distanceKmFrom(_centerLat!, _centerLng!);
-    return d == null ? null : _milesLabel(d);
-  }
-
   /// "12 mi away" / "0.4 mi away" / "Here" from a distance in km.
   static String _milesLabel(double km) {
     final mi = km * _milesPerKm;
@@ -170,16 +158,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Discover'),
-        actions: [
-          IconButton(
-            onPressed: () => setState(() => _mapView = !_mapView),
-            icon: Icon(_mapView ? Icons.grid_view_rounded : Icons.map_outlined),
-            tooltip: _mapView ? 'Grid view' : 'Map view',
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Discover')),
       body: SafeArea(
         child: Column(
           children: [
@@ -264,32 +243,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   }
 
                   final visible = _visibleCars(cars);
-
-                  // Map view: plot the cars that have coordinates.
-                  if (_mapView) {
-                    final located =
-                        visible.where((s) => s.car.hasLocation).toList();
-                    if (located.isEmpty) {
-                      return Center(
-                        child: Text(
-                          _nearMe
-                              ? 'No cars within ${_radiusMiles.round()} mi'
-                              : 'No cars have a location yet',
-                          style: GoogleFonts.inter(
-                              fontSize: 15, color: AppColors.textMuted),
-                        ),
-                      );
-                    }
-                    return DiscoverMap(
-                      cars: [for (final s in located) s.car],
-                      center: (_nearMe && _centerLat != null && _centerLng != null)
-                          ? LatLng(_centerLat!, _centerLng!)
-                          : null,
-                      onOpenCar: _openCar,
-                      labelBuilder: _mapDistanceLabel,
-                    );
-                  }
-
                   if (visible.isEmpty) {
                     final msg = _nearMe
                         ? 'No cars within ${_radiusMiles.round()} mi'
