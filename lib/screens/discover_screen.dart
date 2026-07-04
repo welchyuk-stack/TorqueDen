@@ -3,8 +3,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
+import 'package:torqueden/services/location_service.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
+
+/// Miles per kilometre — the UI shows distances in miles (UK).
+const double _milesPerKm = 0.621371;
 
 /// Discover tab — a dense Instagram-explore-style grid of everyone else's cars.
 /// Tap a tile to open the full profile (and follow from there). A search box
@@ -22,6 +26,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   late Future<List<Car>> _future;
   String _query = '';
+
+  // Location search ("near me") state.
+  bool _nearMe = false;
+  bool _locating = false;
+  double? _centerLat;
+  double? _centerLng;
+  String? _centerLabel;
+  double _radiusMiles = 50;
+
+  static const double _minRadius = 5;
+  static const double _maxRadius = 500;
 
   @override
   void initState() {
@@ -55,7 +70,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     await future;
   }
 
-  List<Car> _filter(List<Car> cars) {
+  List<Car> _textFilter(List<Car> cars) {
     if (_query.isEmpty) return cars;
     final needle = _query.toLowerCase();
     return cars.where((car) {
@@ -66,6 +81,72 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       ].join(' ').toLowerCase();
       return hay.contains(needle);
     }).toList();
+  }
+
+  /// Applies the text filter, then — when "near me" is on with a center set —
+  /// keeps only cars inside the radius and sorts them nearest-first. Each entry
+  /// carries its distance (km) so the tile can show "X mi away".
+  List<_ScoredCar> _visibleCars(List<Car> cars) {
+    final textMatched = _textFilter(cars);
+    if (!_nearMe || _centerLat == null || _centerLng == null) {
+      return [for (final c in textMatched) _ScoredCar(c, null)];
+    }
+    final radiusKm = _radiusMiles / _milesPerKm;
+    final scored = <_ScoredCar>[];
+    for (final car in textMatched) {
+      final d = car.distanceKmFrom(_centerLat!, _centerLng!);
+      if (d != null && d <= radiusKm) scored.add(_ScoredCar(car, d));
+    }
+    scored.sort((a, b) => a.distanceKm!.compareTo(b.distanceKm!));
+    return scored;
+  }
+
+  /// Turns "near me" on/off. Turning it on grabs the device location first.
+  Future<void> _toggleNearMe(bool on) async {
+    if (!on) {
+      setState(() => _nearMe = false);
+      return;
+    }
+    if (_centerLat != null) {
+      setState(() => _nearMe = true);
+      return;
+    }
+    await _setLocationCenter(enableAfter: true);
+  }
+
+  /// Fetches the device location and uses it as the search center.
+  Future<void> _setLocationCenter({bool enableAfter = false}) async {
+    setState(() => _locating = true);
+    try {
+      final place = await LocationService.currentPlace();
+      if (!mounted) return;
+      setState(() {
+        _centerLat = place.latitude;
+        _centerLng = place.longitude;
+        _centerLabel = place.label;
+        if (enableAfter) _nearMe = true;
+      });
+    } on LocationException catch (e) {
+      _notify(e.message);
+    } catch (e) {
+      _notify('Could not get your location: $e');
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
+
+  void _notify(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// "12 mi away" / "0.4 mi away" / "Here" from a distance in km.
+  static String _milesLabel(double km) {
+    final mi = km * _milesPerKm;
+    if (mi < 0.1) return 'Here';
+    if (mi < 10) return '${mi.toStringAsFixed(1)} mi away';
+    return '${mi.round()} mi away';
   }
 
   Future<void> _openCar(Car car) async {
@@ -105,6 +186,17 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   ),
                 ),
               ),
+            ),
+            _LocationBar(
+              nearMe: _nearMe,
+              locating: _locating,
+              centerLabel: _centerLabel,
+              radiusMiles: _radiusMiles,
+              minRadius: _minRadius,
+              maxRadius: _maxRadius,
+              onToggle: _locating ? null : _toggleNearMe,
+              onChangeLocation: _locating ? null : () => _setLocationCenter(),
+              onRadiusChanged: (v) => setState(() => _radiusMiles = v),
             ),
             Expanded(
               child: FutureBuilder<List<Car>>(
@@ -150,11 +242,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     );
                   }
 
-                  final visible = _filter(cars);
+                  final visible = _visibleCars(cars);
                   if (visible.isEmpty) {
+                    final msg = _nearMe
+                        ? 'No cars within ${_radiusMiles.round()} mi'
+                        : 'No matches';
                     return Center(
                       child: Text(
-                        'No matches',
+                        msg,
                         style: GoogleFonts.inter(fontSize: 15, color: AppColors.textMuted),
                       ),
                     );
@@ -181,8 +276,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                           ),
                           itemCount: visible.length,
                           itemBuilder: (_, i) => _GridTile(
-                            car: visible[i],
-                            onTap: () => _openCar(visible[i]),
+                            car: visible[i].car,
+                            distanceLabel: visible[i].distanceKm == null
+                                ? null
+                                : _milesLabel(visible[i].distanceKm!),
+                            onTap: () => _openCar(visible[i].car),
                           ),
                         );
                       },
@@ -198,11 +296,21 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 }
 
-/// A square photo tile with the car name tucked along the bottom.
+/// A car paired with its distance (km) from the search center, or null when
+/// location filtering is off.
+class _ScoredCar {
+  const _ScoredCar(this.car, this.distanceKm);
+  final Car car;
+  final double? distanceKm;
+}
+
+/// A square photo tile with the car name tucked along the bottom, plus an
+/// optional distance badge in the top corner when searching nearby.
 class _GridTile extends StatelessWidget {
-  const _GridTile({required this.car, this.onTap});
+  const _GridTile({required this.car, this.distanceLabel, this.onTap});
 
   final Car car;
+  final String? distanceLabel;
   final VoidCallback? onTap;
 
   @override
@@ -249,6 +357,33 @@ class _GridTile extends StatelessWidget {
                 ),
               ),
             ),
+            if (distanceLabel != null)
+              Positioned(
+                left: 8,
+                top: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.location_on, size: 12, color: AppColors.ember),
+                      const SizedBox(width: 3),
+                      Text(
+                        distanceLabel!,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.cream,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -265,6 +400,132 @@ class _TileFallback extends StatelessWidget {
       color: AppColors.graphiteRaised,
       alignment: Alignment.center,
       child: const Icon(Icons.directions_car_outlined, color: AppColors.steel, size: 32),
+    );
+  }
+}
+
+/// The Marketplace-style location control: a "Near me" toggle chip and, when
+/// active, the search-center label plus a radius slider.
+class _LocationBar extends StatelessWidget {
+  const _LocationBar({
+    required this.nearMe,
+    required this.locating,
+    required this.centerLabel,
+    required this.radiusMiles,
+    required this.minRadius,
+    required this.maxRadius,
+    required this.onToggle,
+    required this.onChangeLocation,
+    required this.onRadiusChanged,
+  });
+
+  final bool nearMe;
+  final bool locating;
+  final String? centerLabel;
+  final double radiusMiles;
+  final double minRadius;
+  final double maxRadius;
+  final ValueChanged<bool>? onToggle;
+  final VoidCallback? onChangeLocation;
+  final ValueChanged<double> onRadiusChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              FilterChip(
+                selected: nearMe,
+                showCheckmark: false,
+                avatar: Icon(
+                  Icons.near_me,
+                  size: 18,
+                  color: nearMe ? AppColors.onEmber : AppColors.steel,
+                ),
+                label: const Text('Near me'),
+                onSelected: onToggle == null
+                    ? null
+                    : (v) => onToggle!(v),
+              ),
+              const SizedBox(width: 10),
+              if (locating)
+                const SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ember),
+                )
+              else if (nearMe)
+                Expanded(
+                  child: GestureDetector(
+                    onTap: onChangeLocation,
+                    child: Row(
+                      children: [
+                        const Icon(Icons.location_on, size: 15, color: AppColors.ember),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            centerLabel ?? 'Current location',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '· Change',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.ember,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (nearMe && !locating)
+            Row(
+              children: [
+                Text(
+                  'Within',
+                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: radiusMiles.clamp(minRadius, maxRadius),
+                    min: minRadius,
+                    max: maxRadius,
+                    divisions: ((maxRadius - minRadius) / 5).round(),
+                    activeColor: AppColors.ember,
+                    label: '${radiusMiles.round()} mi',
+                    onChanged: onRadiusChanged,
+                  ),
+                ),
+                SizedBox(
+                  width: 52,
+                  child: Text(
+                    '${radiusMiles.round()} mi',
+                    textAlign: TextAlign.end,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.cream,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 }
