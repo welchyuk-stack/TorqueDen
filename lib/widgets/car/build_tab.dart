@@ -50,7 +50,10 @@ class _BuildTabState extends State<BuildTab> {
   Future<List<BuildEntry>> _load() async {
     final rows = await _client
         .from('build_entries')
-        .select('*, post_media(id, url, kind, position)')
+        .select(
+          '*, post_media(id, url, kind, position), '
+          'linked:linked_build_entry_id(title, category)',
+        )
         .eq('car_id', widget.car.id)
         .order('created_at', ascending: false);
     return rows.map(BuildEntry.fromMap).toList();
@@ -328,6 +331,48 @@ class _BuildEntryCard extends StatelessWidget {
               ),
             ),
           ],
+          if (entry.hasLinkedMod) ...[
+            const SizedBox(height: 12),
+            LinkedModChip(label: entry.linkedModLabel!),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A pill marking that a post is linked to a mod in the build list.
+class LinkedModChip extends StatelessWidget {
+  const LinkedModChip({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.graphiteRaised,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.build, size: 13, color: AppColors.ember),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.cream,
+              ),
+            ),
+          ),
         ],
       ),
     );

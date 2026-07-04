@@ -11,6 +11,7 @@ class BuildEntry {
     this.category,
     required this.createdAt,
     this.media = const [],
+    this.linkedModLabel,
   });
 
   final String id;
@@ -24,8 +25,22 @@ class BuildEntry {
   final DateTime createdAt;
   final List<PostMedia> media;
 
+  /// A short label for the mod this post links to (e.g. "Exhaust · Cat-back"),
+  /// or null if it isn't linked to one.
+  final String? linkedModLabel;
+
   bool get hasMedia => media.isNotEmpty;
   bool get hasCategory => category != null && category!.trim().isNotEmpty;
+  bool get hasLinkedMod => linkedModLabel != null && linkedModLabel!.isNotEmpty;
+
+  /// Builds a "Category · Title" label from an embedded linked build entry.
+  static String? _labelFromLinked(Map<String, dynamic>? linked) {
+    if (linked == null) return null;
+    final title = linked['title'] as String?;
+    if (title == null || title.isEmpty) return null;
+    final category = linked['category'] as String?;
+    return (category != null && category.isNotEmpty) ? '$category · $title' : title;
+  }
 
   factory BuildEntry.fromMap(Map<String, dynamic> map) {
     final rawMedia = (map['post_media'] as List?) ?? const [];
@@ -43,6 +58,7 @@ class BuildEntry {
       category: map['category'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
       media: media,
+      linkedModLabel: _labelFromLinked(map['linked'] as Map<String, dynamic>?),
     );
   }
 }

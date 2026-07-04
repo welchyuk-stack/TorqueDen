@@ -2,35 +2,32 @@
 -- TorqueDen — live database schema (public schema only)
 --
 -- Captured with `pg_dump --schema-only` from the production Supabase project
--- (Postgres 17.6). This is the source-of-truth snapshot of the DB structure.
+-- (Postgres 17.6). Source-of-truth snapshot of the DB structure.
 --
--- To recreate the schema on a fresh Supabase/Postgres database:
+-- To recreate on a fresh Supabase/Postgres database:
 --     psql "<connection-string>" -f supabase/schema.sql
 --
 -- Applied migrations (see supabase/migrations/):
---   0001_car_location.sql        — adds latitude/longitude/location_name to
---                                  cars (Marketplace-style radius search).
---   0002_merge_mods_into_build.sql — adds category to build_entries and folds
---                                  the mods table into the build timeline. The
---                                  mods table is retained (unused) for rollback.
+--   0001_car_location.sql          — latitude/longitude/location_name on cars.
+--   0002_merge_mods_into_build.sql — category on build_entries; mods folded in.
+--   0003_post_link_to_mod.sql      — linked_build_entry_id on build_entries so
+--                                    a post can link to a mod in the build list.
 --
--- CAVEATS / not included in this file:
+-- CAVEATS / not included:
 --   * No data — structure only.
---   * The trigger that fires handle_new_user() lives on `auth.users` (auth
---     schema), which pg_dump did not export here. To reproduce profile
---     auto-creation on signup, also run:
+--   * The auth.users trigger that fires handle_new_user() is not exported here;
+--     to reproduce profile auto-creation on signup, also run:
 --         CREATE TRIGGER on_auth_user_created
 --           AFTER INSERT ON auth.users
 --           FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
---   * Storage buckets (e.g. `car-photos`) live in the `storage` schema and are
---     configured in the Supabase dashboard, not captured here.
+--   * Storage buckets (e.g. car-photos) are dashboard config, not captured here.
 -- ============================================================================
 
 --
 -- PostgreSQL database dump
 --
 
-\restrict HXZGcz5NHWETIPlok7u83LxEl3uRcnoyC6QLgvbLiooQ3XXxLaa3hz6SpF1L61D
+\restrict Ohp9rotoZHqGqWJawDkPCKBPLkq6cLwsBA3QUAzk7fkW8bpYzQpm4pKzcFWgdlk
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -92,7 +89,8 @@ CREATE TABLE public.build_entries (
     body text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     silent boolean DEFAULT false NOT NULL,
-    category text
+    category text,
+    linked_build_entry_id uuid
 );
 
 
@@ -371,6 +369,14 @@ CREATE INDEX post_media_entry_idx ON public.post_media USING btree (build_entry_
 
 ALTER TABLE ONLY public.build_entries
     ADD CONSTRAINT build_entries_car_id_fkey FOREIGN KEY (car_id) REFERENCES public.cars(id) ON DELETE CASCADE;
+
+
+--
+-- Name: build_entries build_entries_linked_build_entry_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.build_entries
+    ADD CONSTRAINT build_entries_linked_build_entry_id_fkey FOREIGN KEY (linked_build_entry_id) REFERENCES public.build_entries(id) ON DELETE SET NULL;
 
 
 --
@@ -858,5 +864,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict HXZGcz5NHWETIPlok7u83LxEl3uRcnoyC6QLgvbLiooQ3XXxLaa3hz6SpF1L61D
+\unrestrict Ohp9rotoZHqGqWJawDkPCKBPLkq6cLwsBA3QUAzk7fkW8bpYzQpm4pKzcFWgdlk
 

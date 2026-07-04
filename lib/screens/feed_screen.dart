@@ -5,6 +5,7 @@ import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/widgets/car/build_tab.dart' show LinkedModChip;
 import 'package:torqueden/widgets/comments_sheet.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/like_button.dart';
@@ -45,6 +46,7 @@ class _FeedScreenState extends State<FeedScreen> {
           'id, title, body, created_at, '
           'car:cars(id, owner_id, make, model, nickname, photo_url), '
           'post_media(id, url, kind, position), '
+          'linked:linked_build_entry_id(title, category), '
           'post_likes(user_id), post_comments(id)',
         )
         .inFilter('car_id', ids)
@@ -72,10 +74,20 @@ class _FeedScreenState extends State<FeedScreen> {
           likeCount: likes.length,
           likedByMe: likes.any((l) => (l as Map)['user_id'] == uid),
           commentCount: ((row['post_comments'] as List?) ?? const []).length,
+          linkedModLabel: _linkedLabel(row['linked'] as Map<String, dynamic>?),
         ),
       );
     }
     return items;
+  }
+
+  /// "Category · Title" for an embedded linked mod, or null.
+  static String? _linkedLabel(Map<String, dynamic>? linked) {
+    if (linked == null) return null;
+    final title = linked['title'] as String?;
+    if (title == null || title.isEmpty) return null;
+    final category = linked['category'] as String?;
+    return (category != null && category.isNotEmpty) ? '$category · $title' : title;
   }
 
   Future<void> _refresh() async {
@@ -193,6 +205,7 @@ class _FeedItem {
     this.likeCount = 0,
     this.likedByMe = false,
     this.commentCount = 0,
+    this.linkedModLabel,
   });
 
   final String id;
@@ -204,6 +217,7 @@ class _FeedItem {
   final int likeCount;
   final bool likedByMe;
   final int commentCount;
+  final String? linkedModLabel;
 }
 
 class _FeedCard extends StatelessWidget {
@@ -307,6 +321,13 @@ class _FeedCard extends StatelessWidget {
                 color: AppColors.textSecondary,
                 height: 1.5,
               ),
+            ),
+          ],
+          if (item.linkedModLabel != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: LinkedModChip(label: item.linkedModLabel!),
             ),
           ],
           const SizedBox(height: 10),
