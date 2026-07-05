@@ -7,6 +7,7 @@ import 'package:torqueden/screens/club_manage_screen.dart';
 import 'package:torqueden/screens/thread_detail_screen.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/post_error.dart';
 import 'package:torqueden/utils/time_ago.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/moderation_sheet.dart';
@@ -70,13 +71,13 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
 
   Future<void> _refresh() async {
     final future = _load();
-    setState(() => _future = future);
+    setState(() { _future = future; });
     await future;
   }
 
   Future<void> _toggleMembership() async {
     if (_uid == null || _joining) return;
-    setState(() => _joining = true);
+    setState(() { _joining = true; });
     final wasMember = _member;
     try {
       if (wasMember) {
@@ -96,7 +97,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _joining = false);
+      setState(() { _joining = false; });
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Could not update membership: $e')));
     }
@@ -124,7 +125,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
       Navigator.of(context).pop(); // close the club → back to the list
       return;
     }
-    if (result.club != null) setState(() => _club = result.club!);
+    if (result.club != null) setState(() { _club = result.club!; });
     await _refresh();
   }
 
@@ -460,7 +461,7 @@ class _AskSheetState extends State<_AskSheet> {
 
   Future<void> _post() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _saving = true);
+    setState(() { _saving = true; });
     final body = _body.text.trim();
     try {
       await Supabase.instance.client.from('club_threads').insert({
@@ -471,9 +472,9 @@ class _AskSheetState extends State<_AskSheet> {
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _saving = false);
+      setState(() { _saving = false; });
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not post: $e')));
+          .showSnackBar(SnackBar(content: Text(friendlyPostError(e))));
     }
   }
 

@@ -33,7 +33,7 @@ class _ClubsScreenState extends State<ClubsScreen> {
     _future = _load();
     _searchController.addListener(() {
       final q = _searchController.text.trim();
-      if (q != _query) setState(() => _query = q);
+      if (q != _query) setState(() { _query = q; });
     });
   }
 
@@ -64,7 +64,7 @@ class _ClubsScreenState extends State<ClubsScreen> {
 
   Future<void> _refresh() async {
     final future = _load();
-    setState(() => _future = future);
+    setState(() { _future = future; });
     await future;
   }
 

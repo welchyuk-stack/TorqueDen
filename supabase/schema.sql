@@ -6,7 +6,8 @@
 --   0001_car_location · 0002_merge_mods_into_build · 0003_post_link_to_mod
 --   0004_fuzz_car_locations · 0005_clubs · 0006_club_admin · 0007_reports_blocks
 --   0008_club_pins_rules_archive · 0009_club_admins_bans · 0010_club_reply_votes
---   0011_club_reply_parent (threaded replies)
+--   0011_club_reply_parent · 0012_club_moderation3 (slow mode, word filter,
+--   timed mutes, mod log)
 --
 -- Not included: table data; the auth.users trigger for handle_new_user()
 -- (recreate: CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
@@ -17,7 +18,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict FkJQ4qzf27Aky19WmlTRerviJVF6XgfAinHISrtbM47VJ87ufxmx8rB2bIhVYZ7
+\restrict xtlaYrg5QdpRzTkjTp2RhcWKccYNPhUC1yud4cbAkIw3EncCdjjFdj4loo99kzA
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -46,6 +47,78 @@ CREATE SCHEMA public;
 --
 
 COMMENT ON SCHEMA public IS 'standard public schema';
+
+
+--
+-- Name: can_post_now(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.can_post_now(club uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select case
+    when coalesce((select slow_mode_seconds from clubs where id = club), 0) = 0 then true
+    when public.is_club_mod(club) then true
+    else not exists (
+      select 1 from (
+        select created_at from club_threads where club_id = club and author_id = auth.uid()
+        union all
+        select r.created_at from club_replies r
+          join club_threads t on t.id = r.thread_id
+          where t.club_id = club and r.author_id = auth.uid()
+      ) posts
+      where posts.created_at > now() - make_interval(
+        secs => (select slow_mode_seconds from clubs where id = club)))
+  end;
+$$;
+
+
+--
+-- Name: check_reply_words(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_reply_words() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare words text[]; w text; content text;
+begin
+  select c.blocked_words into words from clubs c
+    join club_threads t on t.club_id = c.id where t.id = NEW.thread_id;
+  content := lower(coalesce(NEW.body, ''));
+  if words is not null then
+    foreach w in array words loop
+      if length(trim(w)) > 0 and position(lower(trim(w)) in content) > 0 then
+        raise exception 'BLOCKED_WORD';
+      end if;
+    end loop;
+  end if;
+  return NEW;
+end; $$;
+
+
+--
+-- Name: check_thread_words(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.check_thread_words() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare words text[]; w text; content text;
+begin
+  select blocked_words into words from clubs where id = NEW.club_id;
+  content := lower(coalesce(NEW.title, '') || ' ' || coalesce(NEW.body, ''));
+  if words is not null then
+    foreach w in array words loop
+      if length(trim(w)) > 0 and position(lower(trim(w)) in content) > 0 then
+        raise exception 'BLOCKED_WORD';
+      end if;
+    end loop;
+  end if;
+  return NEW;
+end; $$;
 
 
 --
@@ -103,6 +176,18 @@ CREATE FUNCTION public.is_club_mod(club uuid) RETURNS boolean
   select exists (select 1 from clubs c where c.id = club and c.owner_id = auth.uid())
       or exists (select 1 from club_members m
                  where m.club_id = club and m.user_id = auth.uid() and m.role in ('owner','admin'));
+$$;
+
+
+--
+-- Name: is_muted(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_muted(club uuid, usr uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select exists (select 1 from club_mutes m where m.club_id = club and m.user_id = usr and m.until > now());
 $$;
 
 
@@ -200,6 +285,34 @@ CREATE TABLE public.club_members (
 
 
 --
+-- Name: club_mod_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.club_mod_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    club_id uuid NOT NULL,
+    actor_id uuid DEFAULT auth.uid() NOT NULL,
+    action text NOT NULL,
+    target_user_id uuid,
+    detail text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: club_mutes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.club_mutes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    club_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    until timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: club_replies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -256,7 +369,9 @@ CREATE TABLE public.clubs (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     is_locked boolean DEFAULT false NOT NULL,
     rules text,
-    is_archived boolean DEFAULT false NOT NULL
+    is_archived boolean DEFAULT false NOT NULL,
+    slow_mode_seconds integer DEFAULT 0 NOT NULL,
+    blocked_words text[] DEFAULT '{}'::text[] NOT NULL
 );
 
 
@@ -427,6 +542,30 @@ ALTER TABLE ONLY public.club_members
 
 ALTER TABLE ONLY public.club_members
     ADD CONSTRAINT club_members_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: club_mod_log club_mod_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_mod_log
+    ADD CONSTRAINT club_mod_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: club_mutes club_mutes_club_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_mutes
+    ADD CONSTRAINT club_mutes_club_id_user_id_key UNIQUE (club_id, user_id);
+
+
+--
+-- Name: club_mutes club_mutes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_mutes
+    ADD CONSTRAINT club_mutes_pkey PRIMARY KEY (id);
 
 
 --
@@ -606,6 +745,20 @@ CREATE INDEX club_members_user_idx ON public.club_members USING btree (user_id);
 
 
 --
+-- Name: club_mod_log_club_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_mod_log_club_idx ON public.club_mod_log USING btree (club_id, created_at DESC);
+
+
+--
+-- Name: club_mutes_club_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_mutes_club_idx ON public.club_mutes USING btree (club_id);
+
+
+--
 -- Name: club_replies_parent_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -659,6 +812,20 @@ CREATE INDEX mods_car_id_idx ON public.mods USING btree (car_id);
 --
 
 CREATE INDEX post_media_entry_idx ON public.post_media USING btree (build_entry_id);
+
+
+--
+-- Name: club_replies check_words; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER check_words BEFORE INSERT ON public.club_replies FOR EACH ROW EXECUTE FUNCTION public.check_reply_words();
+
+
+--
+-- Name: club_threads check_words; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER check_words BEFORE INSERT ON public.club_threads FOR EACH ROW EXECUTE FUNCTION public.check_thread_words();
 
 
 --
@@ -746,6 +913,38 @@ ALTER TABLE ONLY public.club_members
 
 ALTER TABLE ONLY public.club_members
     ADD CONSTRAINT club_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_mod_log club_mod_log_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_mod_log
+    ADD CONSTRAINT club_mod_log_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.profiles(id) ON DELETE SET NULL;
+
+
+--
+-- Name: club_mod_log club_mod_log_club_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_mod_log
+    ADD CONSTRAINT club_mod_log_club_id_fkey FOREIGN KEY (club_id) REFERENCES public.clubs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_mutes club_mutes_club_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_mutes
+    ADD CONSTRAINT club_mutes_club_id_fkey FOREIGN KEY (club_id) REFERENCES public.clubs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_mutes club_mutes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_mutes
+    ADD CONSTRAINT club_mutes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -1023,11 +1222,11 @@ CREATE POLICY "Members are viewable by everyone" ON public.club_members FOR SELE
 
 CREATE POLICY "Members can post threads" ON public.club_threads FOR INSERT WITH CHECK (((author_id = auth.uid()) AND (EXISTS ( SELECT 1
    FROM public.club_members m
-  WHERE ((m.club_id = club_threads.club_id) AND (m.user_id = auth.uid())))) AND (NOT public.is_banned(club_id, auth.uid())) AND (NOT (EXISTS ( SELECT 1
+  WHERE ((m.club_id = club_threads.club_id) AND (m.user_id = auth.uid())))) AND (NOT public.is_banned(club_id, auth.uid())) AND (NOT public.is_muted(club_id, auth.uid())) AND (NOT (EXISTS ( SELECT 1
    FROM public.clubs c
   WHERE ((c.id = club_threads.club_id) AND c.is_archived)))) AND (public.is_club_mod(club_id) OR (NOT (EXISTS ( SELECT 1
    FROM public.clubs c
-  WHERE ((c.id = club_threads.club_id) AND c.is_locked)))))));
+  WHERE ((c.id = club_threads.club_id) AND c.is_locked))))) AND public.can_post_now(club_id)));
 
 
 --
@@ -1039,6 +1238,8 @@ CREATE POLICY "Members can reply" ON public.club_replies FOR INSERT WITH CHECK (
      JOIN public.club_threads t ON ((t.club_id = m.club_id)))
   WHERE ((t.id = club_replies.thread_id) AND (m.user_id = auth.uid())))) AND (NOT public.is_banned(( SELECT t.club_id
    FROM public.club_threads t
+  WHERE (t.id = club_replies.thread_id)), auth.uid())) AND (NOT public.is_muted(( SELECT t.club_id
+   FROM public.club_threads t
   WHERE (t.id = club_replies.thread_id)), auth.uid())) AND (NOT (EXISTS ( SELECT 1
    FROM (public.club_threads t
      JOIN public.clubs c ON ((c.id = t.club_id)))
@@ -1047,7 +1248,9 @@ CREATE POLICY "Members can reply" ON public.club_replies FOR INSERT WITH CHECK (
   WHERE (t.id = club_replies.thread_id))) OR (NOT (EXISTS ( SELECT 1
    FROM (public.club_threads t
      JOIN public.clubs c ON ((c.id = t.club_id)))
-  WHERE ((t.id = club_replies.thread_id) AND c.is_locked)))))));
+  WHERE ((t.id = club_replies.thread_id) AND c.is_locked))))) AND public.can_post_now(( SELECT t.club_id
+   FROM public.club_threads t
+  WHERE (t.id = club_replies.thread_id)))));
 
 
 --
@@ -1058,6 +1261,20 @@ CREATE POLICY "Mods add bans" ON public.club_bans FOR INSERT WITH CHECK (public.
 
 
 --
+-- Name: club_mutes Mods add mutes; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Mods add mutes" ON public.club_mutes FOR INSERT WITH CHECK (public.is_club_mod(club_id));
+
+
+--
+-- Name: club_mod_log Mods read log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Mods read log" ON public.club_mod_log FOR SELECT USING (public.is_club_mod(club_id));
+
+
+--
 -- Name: club_bans Mods remove bans; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -1065,10 +1282,31 @@ CREATE POLICY "Mods remove bans" ON public.club_bans FOR DELETE USING (public.is
 
 
 --
+-- Name: club_mutes Mods remove mutes; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Mods remove mutes" ON public.club_mutes FOR DELETE USING (public.is_club_mod(club_id));
+
+
+--
 -- Name: club_bans Mods view bans; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Mods view bans" ON public.club_bans FOR SELECT USING (public.is_club_mod(club_id));
+
+
+--
+-- Name: club_mutes Mods view mutes; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Mods view mutes" ON public.club_mutes FOR SELECT USING (public.is_club_mod(club_id));
+
+
+--
+-- Name: club_mod_log Mods write log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Mods write log" ON public.club_mod_log FOR INSERT WITH CHECK (public.is_club_mod(club_id));
 
 
 --
@@ -1213,6 +1451,18 @@ ALTER TABLE public.club_bans ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.club_members ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: club_mod_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.club_mod_log ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: club_mutes; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.club_mutes ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: club_replies; Type: ROW SECURITY; Schema: public; Owner: -
@@ -1405,6 +1655,33 @@ GRANT USAGE ON SCHEMA public TO service_role;
 
 
 --
+-- Name: FUNCTION can_post_now(club uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.can_post_now(club uuid) TO anon;
+GRANT ALL ON FUNCTION public.can_post_now(club uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.can_post_now(club uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION check_reply_words(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.check_reply_words() TO anon;
+GRANT ALL ON FUNCTION public.check_reply_words() TO authenticated;
+GRANT ALL ON FUNCTION public.check_reply_words() TO service_role;
+
+
+--
+-- Name: FUNCTION check_thread_words(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.check_thread_words() TO anon;
+GRANT ALL ON FUNCTION public.check_thread_words() TO authenticated;
+GRANT ALL ON FUNCTION public.check_thread_words() TO service_role;
+
+
+--
 -- Name: FUNCTION handle_new_club(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -1438,6 +1715,15 @@ GRANT ALL ON FUNCTION public.is_banned(club uuid, usr uuid) TO service_role;
 GRANT ALL ON FUNCTION public.is_club_mod(club uuid) TO anon;
 GRANT ALL ON FUNCTION public.is_club_mod(club uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.is_club_mod(club uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION is_muted(club uuid, usr uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.is_muted(club uuid, usr uuid) TO anon;
+GRANT ALL ON FUNCTION public.is_muted(club uuid, usr uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.is_muted(club uuid, usr uuid) TO service_role;
 
 
 --
@@ -1492,6 +1778,24 @@ GRANT ALL ON TABLE public.club_bans TO service_role;
 GRANT ALL ON TABLE public.club_members TO anon;
 GRANT ALL ON TABLE public.club_members TO authenticated;
 GRANT ALL ON TABLE public.club_members TO service_role;
+
+
+--
+-- Name: TABLE club_mod_log; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.club_mod_log TO anon;
+GRANT ALL ON TABLE public.club_mod_log TO authenticated;
+GRANT ALL ON TABLE public.club_mod_log TO service_role;
+
+
+--
+-- Name: TABLE club_mutes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.club_mutes TO anon;
+GRANT ALL ON TABLE public.club_mutes TO authenticated;
+GRANT ALL ON TABLE public.club_mutes TO service_role;
 
 
 --
@@ -1657,5 +1961,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict FkJQ4qzf27Aky19WmlTRerviJVF6XgfAinHISrtbM47VJ87ufxmx8rB2bIhVYZ7
+\unrestrict xtlaYrg5QdpRzTkjTp2RhcWKccYNPhUC1yud4cbAkIw3EncCdjjFdj4loo99kzA
 

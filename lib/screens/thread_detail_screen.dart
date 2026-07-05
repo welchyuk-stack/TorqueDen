@@ -5,6 +5,7 @@ import 'package:torqueden/models/club_reply.dart';
 import 'package:torqueden/models/club_thread.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/post_error.dart';
 import 'package:torqueden/utils/time_ago.dart';
 import 'package:torqueden/widgets/moderation_sheet.dart';
 
@@ -158,7 +159,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not post your reply: $e')));
+          .showSnackBar(SnackBar(content: Text(friendlyPostError(e))));
     } finally {
       if (mounted) setState(() => _sending = false);
     }

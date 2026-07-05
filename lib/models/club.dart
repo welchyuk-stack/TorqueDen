@@ -10,6 +10,8 @@ class Club {
     this.isLocked = false,
     this.isArchived = false,
     this.rules,
+    this.slowModeSeconds = 0,
+    this.blockedWords = const [],
     this.memberCount = 0,
   });
 
@@ -22,6 +24,8 @@ class Club {
   final bool isLocked;
   final bool isArchived;
   final String? rules;
+  final int slowModeSeconds;
+  final List<String> blockedWords;
 
   /// Populated when the query embeds `club_members(count)`.
   final int memberCount;
@@ -48,6 +52,8 @@ class Club {
       isLocked: (map['is_locked'] as bool?) ?? false,
       isArchived: (map['is_archived'] as bool?) ?? false,
       rules: map['rules'] as String?,
+      slowModeSeconds: (map['slow_mode_seconds'] as int?) ?? 0,
+      blockedWords: (map['blocked_words'] as List?)?.cast<String>() ?? const [],
       memberCount: _embeddedCount(map['club_members']),
     );
   }
