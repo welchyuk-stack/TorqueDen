@@ -123,11 +123,13 @@ class _FeedScreenState extends State<FeedScreen> {
     var adIdx = 0;
     for (var i = 0; i < posts.length; i++) {
       out.add(posts[i]);
-      if ((i + 1) % _adEveryNPosts == 0 && i != posts.length - 1) {
+      if ((i + 1) % _adEveryNPosts == 0) {
         out.add(ads[adIdx % ads.length]);
         adIdx++;
       }
     }
+    // Feed too short to hit a slot — still show one ad so it isn't lost.
+    if (adIdx == 0 && posts.isNotEmpty) out.add(ads.first);
     return out;
   }
 
