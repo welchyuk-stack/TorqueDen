@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/post_comment.dart';
+import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/widgets/moderation_sheet.dart';
 
 /// A modal-bottom-sheet body that shows the comment thread for a build update
 /// and lets the signed-in user add comments or replies.
@@ -69,6 +71,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   }
 
   Future<List<PostComment>> _loadComments() async {
+    await Moderation.refreshBlocks();
     final rows = await _client
         .from('post_comments')
         .select(
@@ -76,7 +79,10 @@ class _CommentsSheetState extends State<CommentsSheet> {
         )
         .eq('build_entry_id', widget.entryId)
         .order('created_at', ascending: true);
-    return rows.map(PostComment.fromMap).toList();
+    return rows
+        .map(PostComment.fromMap)
+        .where((c) => !Moderation.isBlocked(c.userId))
+        .toList();
   }
 
   Future<void> _refresh() async {
@@ -106,6 +112,17 @@ class _CommentsSheetState extends State<CommentsSheet> {
 
   void _startReply(PostComment comment) {
     setState(() => _replyTarget = comment);
+  }
+
+  void _moderate(PostComment comment) {
+    showModerationSheet(
+      context,
+      targetType: 'comment',
+      targetId: comment.id,
+      authorId: comment.userId,
+      authorName: comment.username,
+      onBlocked: _refresh,
+    );
   }
 
   void _cancelReply() {
@@ -183,6 +200,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                         _CommentTile(
                           comment: thread.comment,
                           onReply: () => _startReply(thread.comment),
+                          onMore: () => _moderate(thread.comment),
                         ),
                         for (final reply in thread.replies)
                           Padding(
@@ -190,6 +208,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
                             child: _CommentTile(
                               comment: reply,
                               onReply: () => _startReply(thread.comment),
+                              onMore: () => _moderate(reply),
                             ),
                           ),
                       ],
@@ -373,14 +392,18 @@ class _Thread {
 /// A single comment row: avatar placeholder, username + timestamp, body, and a
 /// "Reply" affordance. Reused for both top-level comments and replies.
 class _CommentTile extends StatelessWidget {
-  const _CommentTile({required this.comment, required this.onReply});
+  const _CommentTile({required this.comment, required this.onReply, this.onMore});
 
   final PostComment comment;
   final VoidCallback onReply;
+  final VoidCallback? onMore;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return GestureDetector(
+      onLongPress: onMore,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,6 +466,7 @@ class _CommentTile extends StatelessWidget {
             ),
           ),
         ],
+      ),
       ),
     );
   }

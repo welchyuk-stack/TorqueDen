@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/services/location_service.dart';
+import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/settings_button.dart';
@@ -57,10 +58,14 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   Future<List<Car>> _load() async {
     final uid = _client.auth.currentUser?.id;
+    await Moderation.refreshBlocks();
     var q = _client.from('cars').select();
     if (uid != null) q = q.neq('owner_id', uid);
     final rows = await q.order('created_at', ascending: false);
-    return rows.map(Car.fromMap).toList();
+    return rows
+        .map(Car.fromMap)
+        .where((c) => !Moderation.isBlocked(c.ownerId))
+        .toList();
   }
 
   Future<void> _refresh() async {

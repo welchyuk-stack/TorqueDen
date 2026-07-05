@@ -4,9 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
+import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/car/build_tab.dart' show LinkedModChip;
 import 'package:torqueden/widgets/comments_sheet.dart';
+import 'package:torqueden/widgets/moderation_sheet.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/like_button.dart';
 import 'package:torqueden/widgets/post_media_view.dart';
@@ -36,6 +38,7 @@ class _FeedScreenState extends State<FeedScreen> {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return const [];
 
+    await Moderation.refreshBlocks();
     final follows =
         await _client.from('follows').select('car_id').eq('follower_id', uid);
     final ids = follows.map((r) => r['car_id'] as String).toList();
@@ -58,6 +61,8 @@ class _FeedScreenState extends State<FeedScreen> {
     for (final row in rows) {
       final carMap = row['car'];
       if (carMap == null) continue;
+      // Hide posts from blocked owners.
+      if (Moderation.isBlocked((carMap as Map)['owner_id'] as String?)) continue;
       final media = ((row['post_media'] as List?) ?? const [])
           .cast<Map<String, dynamic>>()
           .map(PostMedia.fromMap)
@@ -300,6 +305,18 @@ class _FeedCard extends StatelessWidget {
                 icon: const Icon(Icons.arrow_forward, size: 20),
                 color: AppColors.steel,
                 tooltip: 'View car',
+              ),
+              IconButton(
+                onPressed: () => showModerationSheet(
+                  context,
+                  targetType: 'post',
+                  targetId: item.id,
+                  authorId: car.ownerId,
+                  onBlocked: () => onChanged?.call(),
+                ),
+                icon: const Icon(Icons.more_vert, size: 20),
+                color: AppColors.steel,
+                tooltip: 'More',
               ),
             ],
           ),

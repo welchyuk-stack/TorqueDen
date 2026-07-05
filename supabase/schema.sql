@@ -1,35 +1,24 @@
 -- ============================================================================
 -- TorqueDen — live database schema (public schema only)
 --
--- Captured with `pg_dump --schema-only` from the production Supabase project
--- (Postgres 17.6). Source-of-truth snapshot of the DB structure.
---
--- To recreate on a fresh Supabase/Postgres database:
---     psql "<connection-string>" -f supabase/schema.sql
+-- Captured with `pg_dump --schema-only` from the production Supabase project.
+-- Source-of-truth snapshot. Recreate with: psql "<conn>" -f supabase/schema.sql
 --
 -- Applied migrations (see supabase/migrations/):
---   0001_car_location.sql          — latitude/longitude/location_name on cars.
---   0002_merge_mods_into_build.sql — category on build_entries; mods folded in.
---   0003_post_link_to_mod.sql      — linked_build_entry_id on build_entries so
---                                    a post can link to a mod in the build list.
---   0004_fuzz_car_locations.sql    — (data) coarsen car coords to a ~1 km grid
---                                    for privacy; new writes fuzzed client-side.
+--   0001_car_location · 0002_merge_mods_into_build · 0003_post_link_to_mod
+--   0004_fuzz_car_locations · 0005_clubs · 0006_club_admin (lock + owner remove)
+--   0007_reports_blocks (moderation: report content/users + block users)
 --
--- CAVEATS / not included:
---   * No data — structure only.
---   * The auth.users trigger that fires handle_new_user() is not exported here;
---     to reproduce profile auto-creation on signup, also run:
---         CREATE TRIGGER on_auth_user_created
---           AFTER INSERT ON auth.users
---           FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
---   * Storage buckets (e.g. car-photos) are dashboard config, not captured here.
+-- Not included: table data; the auth.users trigger for handle_new_user()
+-- (recreate: CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
+--  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user()); storage buckets.
 -- ============================================================================
 
 --
 -- PostgreSQL database dump
 --
 
-\restrict Ohp9rotoZHqGqWJawDkPCKBPLkq6cLwsBA3QUAzk7fkW8bpYzQpm4pKzcFWgdlk
+\restrict mYGWCbDivupBXARegIjSclhNp1NMDhpatfU6OWgXLdkwNU0e2JrDHvDwC8cvtzd
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -61,6 +50,22 @@ COMMENT ON SCHEMA public IS 'standard public schema';
 
 
 --
+-- Name: handle_new_club(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.handle_new_club() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  insert into public.club_members (club_id, user_id, role)
+  values (new.id, new.owner_id, 'owner')
+  on conflict (club_id, user_id) do nothing;
+  return new;
+end; $$;
+
+
+--
 -- Name: handle_new_user(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -79,6 +84,18 @@ end; $$;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: blocks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.blocks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    blocker_id uuid DEFAULT auth.uid() NOT NULL,
+    blocked_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 
 --
 -- Name: build_entries; Type: TABLE; Schema: public; Owner: -
@@ -129,6 +146,62 @@ CREATE TABLE public.cars (
     latitude double precision,
     longitude double precision,
     location_name text
+);
+
+
+--
+-- Name: club_members; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.club_members (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    club_id uuid NOT NULL,
+    user_id uuid DEFAULT auth.uid() NOT NULL,
+    role text DEFAULT 'member'::text NOT NULL,
+    joined_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: club_replies; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.club_replies (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    thread_id uuid NOT NULL,
+    author_id uuid DEFAULT auth.uid() NOT NULL,
+    body text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: club_threads; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.club_threads (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    club_id uuid NOT NULL,
+    author_id uuid DEFAULT auth.uid() NOT NULL,
+    title text NOT NULL,
+    body text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: clubs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.clubs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    description text,
+    avatar_url text,
+    owner_id uuid DEFAULT auth.uid() NOT NULL,
+    is_public boolean DEFAULT true NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_locked boolean DEFAULT false NOT NULL
 );
 
 
@@ -214,6 +287,38 @@ CREATE TABLE public.profiles (
 
 
 --
+-- Name: reports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reports (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    reporter_id uuid DEFAULT auth.uid() NOT NULL,
+    target_type text NOT NULL,
+    target_id uuid NOT NULL,
+    reason text NOT NULL,
+    note text,
+    status text DEFAULT 'open'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: blocks blocks_blocker_id_blocked_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.blocks
+    ADD CONSTRAINT blocks_blocker_id_blocked_id_key UNIQUE (blocker_id, blocked_id);
+
+
+--
+-- Name: blocks blocks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.blocks
+    ADD CONSTRAINT blocks_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: build_entries build_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -235,6 +340,46 @@ ALTER TABLE ONLY public.car_specs
 
 ALTER TABLE ONLY public.cars
     ADD CONSTRAINT cars_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: club_members club_members_club_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_members
+    ADD CONSTRAINT club_members_club_id_user_id_key UNIQUE (club_id, user_id);
+
+
+--
+-- Name: club_members club_members_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_members
+    ADD CONSTRAINT club_members_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: club_replies club_replies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_replies
+    ADD CONSTRAINT club_replies_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: club_threads club_threads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_threads
+    ADD CONSTRAINT club_threads_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: clubs clubs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clubs
+    ADD CONSTRAINT clubs_pkey PRIMARY KEY (id);
 
 
 --
@@ -310,6 +455,21 @@ ALTER TABLE ONLY public.profiles
 
 
 --
+-- Name: reports reports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reports
+    ADD CONSTRAINT reports_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: blocks_blocker_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX blocks_blocker_idx ON public.blocks USING btree (blocker_id);
+
+
+--
 -- Name: build_entries_car_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -338,6 +498,34 @@ CREATE INDEX cars_owner_id_idx ON public.cars USING btree (owner_id);
 
 
 --
+-- Name: club_members_club_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_members_club_idx ON public.club_members USING btree (club_id);
+
+
+--
+-- Name: club_members_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_members_user_idx ON public.club_members USING btree (user_id);
+
+
+--
+-- Name: club_replies_thread_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_replies_thread_idx ON public.club_replies USING btree (thread_id, created_at);
+
+
+--
+-- Name: club_threads_club_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_threads_club_idx ON public.club_threads USING btree (club_id, created_at DESC);
+
+
+--
 -- Name: follows_car_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -363,6 +551,29 @@ CREATE INDEX mods_car_id_idx ON public.mods USING btree (car_id);
 --
 
 CREATE INDEX post_media_entry_idx ON public.post_media USING btree (build_entry_id);
+
+
+--
+-- Name: clubs on_club_created; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER on_club_created AFTER INSERT ON public.clubs FOR EACH ROW EXECUTE FUNCTION public.handle_new_club();
+
+
+--
+-- Name: blocks blocks_blocked_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.blocks
+    ADD CONSTRAINT blocks_blocked_id_fkey FOREIGN KEY (blocked_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: blocks blocks_blocker_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.blocks
+    ADD CONSTRAINT blocks_blocker_id_fkey FOREIGN KEY (blocker_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -395,6 +606,62 @@ ALTER TABLE ONLY public.car_specs
 
 ALTER TABLE ONLY public.cars
     ADD CONSTRAINT cars_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_members club_members_club_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_members
+    ADD CONSTRAINT club_members_club_id_fkey FOREIGN KEY (club_id) REFERENCES public.clubs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_members club_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_members
+    ADD CONSTRAINT club_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_replies club_replies_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_replies
+    ADD CONSTRAINT club_replies_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_replies club_replies_thread_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_replies
+    ADD CONSTRAINT club_replies_thread_id_fkey FOREIGN KEY (thread_id) REFERENCES public.club_threads(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_threads club_threads_author_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_threads
+    ADD CONSTRAINT club_threads_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_threads club_threads_club_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_threads
+    ADD CONSTRAINT club_threads_club_id_fkey FOREIGN KEY (club_id) REFERENCES public.clubs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: clubs clubs_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clubs
+    ADD CONSTRAINT clubs_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -486,6 +753,52 @@ ALTER TABLE ONLY public.profiles
 
 
 --
+-- Name: reports reports_reporter_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reports
+    ADD CONSTRAINT reports_reporter_id_fkey FOREIGN KEY (reporter_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_replies Author or owner can delete reply; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Author or owner can delete reply" ON public.club_replies FOR DELETE USING (((author_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM (public.club_threads t
+     JOIN public.clubs c ON ((c.id = t.club_id)))
+  WHERE ((t.id = club_replies.thread_id) AND (c.owner_id = auth.uid()))))));
+
+
+--
+-- Name: club_threads Author or owner can delete thread; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Author or owner can delete thread" ON public.club_threads FOR DELETE USING (((author_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM public.clubs c
+  WHERE ((c.id = club_threads.club_id) AND (c.owner_id = auth.uid()))))));
+
+
+--
+-- Name: club_replies Author or owner can update reply; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Author or owner can update reply" ON public.club_replies FOR UPDATE USING (((author_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM (public.club_threads t
+     JOIN public.clubs c ON ((c.id = t.club_id)))
+  WHERE ((t.id = club_replies.thread_id) AND (c.owner_id = auth.uid()))))));
+
+
+--
+-- Name: club_threads Author or owner can update thread; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Author or owner can update thread" ON public.club_threads FOR UPDATE USING (((author_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM public.clubs c
+  WHERE ((c.id = club_threads.club_id) AND (c.owner_id = auth.uid()))))));
+
+
+--
 -- Name: cars Cars are viewable by everyone; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -493,10 +806,104 @@ CREATE POLICY "Cars are viewable by everyone" ON public.cars FOR SELECT USING (t
 
 
 --
+-- Name: clubs Clubs are viewable by everyone; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Clubs are viewable by everyone" ON public.clubs FOR SELECT USING (true);
+
+
+--
+-- Name: reports File a report; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "File a report" ON public.reports FOR INSERT WITH CHECK ((reporter_id = auth.uid()));
+
+
+--
+-- Name: club_members Leave or owner can remove; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Leave or owner can remove" ON public.club_members FOR DELETE USING (((user_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM public.clubs c
+  WHERE ((c.id = club_members.club_id) AND (c.owner_id = auth.uid()))))));
+
+
+--
+-- Name: blocks Manage own blocks (delete); Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Manage own blocks (delete)" ON public.blocks FOR DELETE USING ((blocker_id = auth.uid()));
+
+
+--
+-- Name: blocks Manage own blocks (insert); Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Manage own blocks (insert)" ON public.blocks FOR INSERT WITH CHECK ((blocker_id = auth.uid()));
+
+
+--
+-- Name: blocks Manage own blocks (select); Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Manage own blocks (select)" ON public.blocks FOR SELECT USING ((blocker_id = auth.uid()));
+
+
+--
+-- Name: club_members Members are viewable by everyone; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Members are viewable by everyone" ON public.club_members FOR SELECT USING (true);
+
+
+--
+-- Name: club_threads Members can post threads; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Members can post threads" ON public.club_threads FOR INSERT WITH CHECK (((author_id = auth.uid()) AND (EXISTS ( SELECT 1
+   FROM public.club_members m
+  WHERE ((m.club_id = club_threads.club_id) AND (m.user_id = auth.uid())))) AND ((EXISTS ( SELECT 1
+   FROM public.clubs c
+  WHERE ((c.id = club_threads.club_id) AND (c.owner_id = auth.uid())))) OR (NOT (EXISTS ( SELECT 1
+   FROM public.clubs c
+  WHERE ((c.id = club_threads.club_id) AND c.is_locked)))))));
+
+
+--
+-- Name: club_replies Members can reply; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Members can reply" ON public.club_replies FOR INSERT WITH CHECK (((author_id = auth.uid()) AND (EXISTS ( SELECT 1
+   FROM (public.club_members m
+     JOIN public.club_threads t ON ((t.club_id = m.club_id)))
+  WHERE ((t.id = club_replies.thread_id) AND (m.user_id = auth.uid())))) AND ((EXISTS ( SELECT 1
+   FROM (public.club_threads t
+     JOIN public.clubs c ON ((c.id = t.club_id)))
+  WHERE ((t.id = club_replies.thread_id) AND (c.owner_id = auth.uid())))) OR (NOT (EXISTS ( SELECT 1
+   FROM (public.club_threads t
+     JOIN public.clubs c ON ((c.id = t.club_id)))
+  WHERE ((t.id = club_replies.thread_id) AND c.is_locked)))))));
+
+
+--
+-- Name: clubs Owners can delete their club; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Owners can delete their club" ON public.clubs FOR DELETE USING ((owner_id = auth.uid()));
+
+
+--
 -- Name: cars Owners can delete their own cars; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Owners can delete their own cars" ON public.cars FOR DELETE USING ((owner_id = auth.uid()));
+
+
+--
+-- Name: clubs Owners can update their club; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Owners can update their club" ON public.clubs FOR UPDATE USING ((owner_id = auth.uid()));
 
 
 --
@@ -514,10 +921,38 @@ CREATE POLICY "Profiles are viewable by everyone" ON public.profiles FOR SELECT 
 
 
 --
+-- Name: club_replies Replies are viewable by everyone; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Replies are viewable by everyone" ON public.club_replies FOR SELECT USING (true);
+
+
+--
+-- Name: reports See own reports; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "See own reports" ON public.reports FOR SELECT USING ((reporter_id = auth.uid()));
+
+
+--
+-- Name: club_threads Threads are viewable by everyone; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Threads are viewable by everyone" ON public.club_threads FOR SELECT USING (true);
+
+
+--
 -- Name: cars Users can add cars to their own garage; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Users can add cars to their own garage" ON public.cars FOR INSERT WITH CHECK ((owner_id = auth.uid()));
+
+
+--
+-- Name: clubs Users can create clubs; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can create clubs" ON public.clubs FOR INSERT WITH CHECK ((owner_id = auth.uid()));
 
 
 --
@@ -528,11 +963,24 @@ CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT
 
 
 --
+-- Name: club_members Users can join clubs; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can join clubs" ON public.club_members FOR INSERT WITH CHECK ((user_id = auth.uid()));
+
+
+--
 -- Name: profiles Users can update their own profile; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING ((auth.uid() = id));
 
+
+--
+-- Name: blocks; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.blocks ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: build_entries; Type: ROW SECURITY; Schema: public; Owner: -
@@ -551,6 +999,30 @@ ALTER TABLE public.car_specs ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.cars ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: club_members; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.club_members ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: club_replies; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.club_replies ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: club_threads; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.club_threads ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: clubs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.clubs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: follows; Type: ROW SECURITY; Schema: public; Owner: -
@@ -703,6 +1175,12 @@ CREATE POLICY "read post_media" ON public.post_media FOR SELECT USING (true);
 
 
 --
+-- Name: reports; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.reports ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: SCHEMA public; Type: ACL; Schema: -; Owner: -
 --
 
@@ -713,12 +1191,30 @@ GRANT USAGE ON SCHEMA public TO service_role;
 
 
 --
+-- Name: FUNCTION handle_new_club(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.handle_new_club() TO anon;
+GRANT ALL ON FUNCTION public.handle_new_club() TO authenticated;
+GRANT ALL ON FUNCTION public.handle_new_club() TO service_role;
+
+
+--
 -- Name: FUNCTION handle_new_user(); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.handle_new_user() TO anon;
 GRANT ALL ON FUNCTION public.handle_new_user() TO authenticated;
 GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
+
+
+--
+-- Name: TABLE blocks; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.blocks TO anon;
+GRANT ALL ON TABLE public.blocks TO authenticated;
+GRANT ALL ON TABLE public.blocks TO service_role;
 
 
 --
@@ -746,6 +1242,42 @@ GRANT ALL ON TABLE public.car_specs TO service_role;
 GRANT ALL ON TABLE public.cars TO anon;
 GRANT ALL ON TABLE public.cars TO authenticated;
 GRANT ALL ON TABLE public.cars TO service_role;
+
+
+--
+-- Name: TABLE club_members; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.club_members TO anon;
+GRANT ALL ON TABLE public.club_members TO authenticated;
+GRANT ALL ON TABLE public.club_members TO service_role;
+
+
+--
+-- Name: TABLE club_replies; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.club_replies TO anon;
+GRANT ALL ON TABLE public.club_replies TO authenticated;
+GRANT ALL ON TABLE public.club_replies TO service_role;
+
+
+--
+-- Name: TABLE club_threads; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.club_threads TO anon;
+GRANT ALL ON TABLE public.club_threads TO authenticated;
+GRANT ALL ON TABLE public.club_threads TO service_role;
+
+
+--
+-- Name: TABLE clubs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.clubs TO anon;
+GRANT ALL ON TABLE public.clubs TO authenticated;
+GRANT ALL ON TABLE public.clubs TO service_role;
 
 
 --
@@ -800,6 +1332,15 @@ GRANT ALL ON TABLE public.post_media TO service_role;
 GRANT ALL ON TABLE public.profiles TO anon;
 GRANT ALL ON TABLE public.profiles TO authenticated;
 GRANT ALL ON TABLE public.profiles TO service_role;
+
+
+--
+-- Name: TABLE reports; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.reports TO anon;
+GRANT ALL ON TABLE public.reports TO authenticated;
+GRANT ALL ON TABLE public.reports TO service_role;
 
 
 --
@@ -866,5 +1407,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict Ohp9rotoZHqGqWJawDkPCKBPLkq6cLwsBA3QUAzk7fkW8bpYzQpm4pKzcFWgdlk
+\unrestrict mYGWCbDivupBXARegIjSclhNp1NMDhpatfU6OWgXLdkwNU0e2JrDHvDwC8cvtzd
 
