@@ -23,6 +23,11 @@ class Entitlements {
   /// Creating clubs is a Premium feature. Open to everyone while [enforce] is off.
   static bool get canCreateClubs => !enforce || isPremium;
 
+  /// Creating/editing a Partner Page always requires the Partner tier — there's
+  /// no free-trial concept for a B2B page, so this ignores [enforce]. (RLS also
+  /// enforces it server-side.)
+  static bool get canManagePartnerPage => isPartner;
+
   static Future<void> refresh() async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) { _tier = Tier.free; return; }

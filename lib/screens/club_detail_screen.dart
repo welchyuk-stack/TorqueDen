@@ -844,7 +844,12 @@ class _AskSheetState extends State<_AskSheet> {
                 minLines: 3,
                 decoration: const InputDecoration(labelText: 'Details (optional)', hintText: 'Add context…'),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
+              Text(
+                'Links here are for sharing info with other members — not for promoting a business. Businesses can set up a Partner Page.',
+                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, height: 1.4),
+              ),
+              const SizedBox(height: 16),
               if (_saving)
                 const Center(child: CircularProgressIndicator(color: AppColors.ember))
               else

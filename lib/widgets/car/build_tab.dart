@@ -8,6 +8,7 @@ import 'package:torqueden/models/build_entry.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/link_guard.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/post_media_view.dart';
 
@@ -504,6 +505,11 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
 
   Future<void> _save({bool silent = false}) async {
     if (!_formKey.currentState!.validate()) return;
+    // Build updates are promotion-free — links belong on a Partner Page.
+    if (containsUrl(_title.text) || containsUrl(_body.text)) {
+      _fail('Links aren\'t allowed in build updates. Businesses can add their website on a Partner Page.');
+      return;
+    }
     setState(() => _saving = true);
 
     final client = Supabase.instance.client;

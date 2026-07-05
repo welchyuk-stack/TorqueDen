@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/screens/location_settings_screen.dart';
+import 'package:torqueden/screens/partner/partners_view.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/services/saved_location.dart';
 import 'package:torqueden/services/units_pref.dart';
@@ -27,6 +28,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   late Future<List<Car>> _future;
   String _query = '';
+  int _tab = 0; // 0 = Cars, 1 = Partners
 
   // Location search ("near me") state. The centre comes from the location the
   // user set in Settings (SavedLocation), not a live GPS grab.
@@ -168,7 +170,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: AppColors.graphiteRaised,
-                  hintText: 'Search cars, builds, people…',
+                  hintText: _tab == 0 ? 'Search cars, builds…' : 'Search partners…',
                   prefixIcon: const Icon(Icons.search, color: AppColors.steel),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -183,18 +185,31 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 ),
               ),
             ),
-            _LocationBar(
-              nearMe: _nearMe,
-              centerLabel: _centerLabel,
-              radiusKm: _radiusKm,
-              minRadius: _minRadius,
-              maxRadius: _maxRadius,
-              onToggle: _toggleNearMe,
-              onChangeLocation: _openLocationSettings,
-              onRadiusChanged: (v) => setState(() => _radiusKm = v),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Row(
+                children: [
+                  _Segment(label: 'Cars', selected: _tab == 0, onTap: () => setState(() => _tab = 0)),
+                  const SizedBox(width: 8),
+                  _Segment(label: 'Partners', selected: _tab == 1, onTap: () => setState(() => _tab = 1)),
+                ],
+              ),
             ),
+            if (_tab == 0)
+              _LocationBar(
+                nearMe: _nearMe,
+                centerLabel: _centerLabel,
+                radiusKm: _radiusKm,
+                minRadius: _minRadius,
+                maxRadius: _maxRadius,
+                onToggle: _toggleNearMe,
+                onChangeLocation: _openLocationSettings,
+                onRadiusChanged: (v) => setState(() => _radiusKm = v),
+              ),
             Expanded(
-              child: FutureBuilder<List<Car>>(
+              child: _tab == 1
+                  ? PartnersView(query: _query)
+                  : FutureBuilder<List<Car>>(
                 future: _future,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -285,6 +300,37 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A pill toggle for the Cars / Partners tabs.
+class _Segment extends StatelessWidget {
+  const _Segment({required this.label, required this.selected, required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.ember : AppColors.graphiteRaised,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: selected ? AppColors.ember : AppColors.hairline),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: selected ? AppColors.onEmber : AppColors.steel,
+          ),
         ),
       ),
     );

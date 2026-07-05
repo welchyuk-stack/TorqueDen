@@ -8,7 +8,7 @@ import 'package:torqueden/theme.dart';
 
 /// A floating, frosted-glass bottom navigation bar (iOS Liquid Glass spirit).
 ///
-/// Four destinations (Home, Search, Garage, Clubs) plus a hex-**nut** create
+/// Four destinations (Home, Discover, Garage, Clubs) plus a hex-**nut** create
 /// button on the far right — tap it to open the composer.
 class FloatingNavBar extends StatelessWidget {
   const FloatingNavBar({
@@ -47,7 +47,7 @@ class FloatingNavBar extends StatelessWidget {
               _NavItem(
                 icon: Icons.search_outlined,
                 selectedIcon: Icons.search,
-                label: 'Search',
+                label: 'Discover',
                 selected: index == 1,
                 onTap: () => onSelect(1),
               ),

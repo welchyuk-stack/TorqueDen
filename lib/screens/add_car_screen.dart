@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/services/location_service.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/link_guard.dart';
 
 /// Name of the public Supabase Storage bucket that holds car photos.
 const String kCarPhotosBucket = 'car-photos';
@@ -158,6 +159,11 @@ class _AddCarScreenState extends State<AddCarScreen> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    // Keep the garage promotion-free — links belong on a Partner Page.
+    if (containsUrl(_description.text) || containsUrl(_nickname.text)) {
+      _notify('Links aren\'t allowed in the garage. Businesses can add their website on a Partner Page.');
+      return;
+    }
     setState(() => _saving = true);
 
     final client = Supabase.instance.client;
