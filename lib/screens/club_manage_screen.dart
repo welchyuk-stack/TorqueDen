@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/club.dart';
 import 'package:torqueden/screens/add_car_screen.dart' show kCarPhotosBucket;
+import 'package:torqueden/screens/club_members_screen.dart';
 import 'package:torqueden/services/club_mod_log.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/time_ago.dart';
@@ -114,37 +115,6 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
       .where((w) => w.isNotEmpty)
       .toList();
 
-  Future<void> _mute(_Member m) async {
-    final hours = await showModalBottomSheet<int>(
-      context: context,
-      backgroundColor: AppColors.graphite,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 8),
-            for (final opt in const [(1, 'Mute for 1 hour'), (24, 'Mute for 1 day'), (168, 'Mute for 7 days')])
-              ListTile(title: Text(opt.$2), onTap: () => Navigator.pop(ctx, opt.$1)),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
-    );
-    if (hours == null) return;
-    final until = DateTime.now().toUtc().add(Duration(hours: hours));
-    try {
-      await _client.from('club_mutes').upsert(
-        {'club_id': _club.id, 'user_id': m.userId, 'until': until.toIso8601String()},
-        onConflict: 'club_id,user_id',
-      );
-      ClubModLog.record(_club.id, 'mute', targetUserId: m.userId, detail: '${hours}h');
-      setState(() { _mutedFuture = _loadMuted(); });
-    } catch (e) {
-      _snack('Could not mute: $e');
-    }
-  }
-
   Future<void> _unmute(_Member m) async {
     try {
       await _client.from('club_mutes').delete().eq('club_id', _club.id).eq('user_id', m.userId);
@@ -170,31 +140,23 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     }).toList();
   }
 
-  Future<void> _setRole(_Member m, String role) async {
-    try {
-      await _client
-          .from('club_members')
-          .update({'role': role})
-          .eq('club_id', _club.id)
-          .eq('user_id', m.userId);
-      ClubModLog.record(_club.id, role == 'admin' ? 'make_admin' : 'remove_admin', targetUserId: m.userId);
-      setState(() { _membersFuture = _loadMembers(); });
-    } catch (e) {
-      _snack('Could not update role: $e');
+  Future<void> _openMembers() async {
+    final result = await Navigator.of(context).push<ClubMembersResult>(
+      MaterialPageRoute(builder: (_) => ClubMembersScreen(club: _club)),
+    );
+    if (result == null || !mounted) return;
+    if (result.transferredClub != null) {
+      // Ownership handed over — bubble the updated club up and leave Manage.
+      Navigator.of(context).pop(ClubManageResult(club: result.transferredClub));
+      return;
     }
-  }
-
-  Future<void> _ban(_Member m) async {
-    try {
-      await _client.from('club_bans').insert({'club_id': _club.id, 'user_id': m.userId});
-      await _client.from('club_members').delete().eq('club_id', _club.id).eq('user_id', m.userId);
-      ClubModLog.record(_club.id, 'ban', targetUserId: m.userId);
+    if (result.changed) {
       setState(() {
         _membersFuture = _loadMembers();
         _bannedFuture = _loadBanned();
+        _mutedFuture = _loadMuted();
+        _logFuture = _loadLog();
       });
-    } catch (e) {
-      _snack('Could not ban: $e');
     }
   }
 
@@ -358,57 +320,6 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     }
   }
 
-  Future<void> _transferOwnership(_Member m) async {
-    final name = m.username ?? 'this member';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.graphite,
-        title: Text('Make $name the owner?',
-            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
-        content: Text('You\'ll become a regular member and lose admin control of this club.',
-            style: GoogleFonts.inter(color: AppColors.textSecondary)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Transfer', style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final me = _client.auth.currentUser!.id;
-    try {
-      // Roles first (while still owner), then hand over owner_id.
-      await _client.from('club_members').update({'role': 'owner'}).eq('club_id', _club.id).eq('user_id', m.userId);
-      await _client.from('club_members').update({'role': 'member'}).eq('club_id', _club.id).eq('user_id', me);
-      final rows = await _client
-          .from('clubs')
-          .update({'owner_id': m.userId})
-          .eq('id', _club.id)
-          .select('*, club_members(count)');
-      ClubModLog.record(_club.id, 'transfer', targetUserId: m.userId);
-      if (mounted) Navigator.of(context).pop(ClubManageResult(club: Club.fromMap(rows.first)));
-    } catch (e) {
-      _snack('Could not transfer ownership: $e');
-    }
-  }
-
-  Future<void> _removeMember(_Member m) async {
-    try {
-      await _client
-          .from('club_members')
-          .delete()
-          .eq('club_id', _club.id)
-          .eq('user_id', m.userId);
-      ClubModLog.record(_club.id, 'remove', targetUserId: m.userId);
-      setState(() { _membersFuture = _loadMembers(); });
-    } catch (e) {
-      _snack('Could not remove member: $e');
-    }
-  }
-
   Future<void> _deleteClub() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -550,17 +461,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                   hintText: 'House rules shown at the top of the club.',
                 ),
               ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FilledButton(
-                  onPressed: _savingDetails ? null : _saveDetails,
-                  child: _savingDetails
-                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.onEmber))
-                      : const Text('Save changes'),
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
 
               // Private
               Container(
@@ -664,35 +565,30 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
               ),
               const SizedBox(height: 24),
 
-              // Members
-              Text('Members',
-                  style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
-              const SizedBox(height: 8),
-              FutureBuilder<List<_Member>>(
-                future: _membersFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
-                    );
-                  }
-                  final members = snapshot.data ?? const <_Member>[];
-                  return Column(
-                    children: [
-                      for (final m in members)
-                        _MemberRow(
-                          member: m,
-                          onRemove: () => _removeMember(m),
-                          onMakeOwner: () => _transferOwnership(m),
-                          onToggleAdmin: () =>
-                              _setRole(m, m.role == 'admin' ? 'member' : 'admin'),
-                          onBan: () => _ban(m),
-                          onMute: () => _mute(m),
-                        ),
-                    ],
-                  );
-                },
+              // Members — opens a searchable full-screen list.
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.graphite,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.hairline),
+                ),
+                child: ListTile(
+                  onTap: _openMembers,
+                  leading: const Icon(Icons.group_outlined, color: AppColors.steel),
+                  title: Text('Members',
+                      style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                  subtitle: FutureBuilder<List<_Member>>(
+                    future: _membersFuture,
+                    builder: (context, snapshot) {
+                      final n = snapshot.data?.length;
+                      return Text(
+                        n == null ? 'Manage roles, mutes and bans' : '$n ${n == 1 ? 'member' : 'members'} · manage roles, mutes and bans',
+                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13),
+                      );
+                    },
+                  ),
+                  trailing: const Icon(Icons.chevron_right, color: AppColors.steel),
+                ),
               ),
               const SizedBox(height: 20),
 
@@ -797,6 +693,18 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
               ),
               const SizedBox(height: 4),
 
+              // Save (name / description / rules / blocked words)
+              FilledButton(
+                onPressed: _savingDetails ? null : _saveDetails,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(48),
+                ),
+                child: _savingDetails
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.onEmber))
+                    : const Text('Save changes'),
+              ),
+              const SizedBox(height: 12),
+
               // Delete
               OutlinedButton.icon(
                 onPressed: _deleteClub,
@@ -853,75 +761,6 @@ class _LogEntry {
     final tgt = target != null ? ' $target' : '';
     final extra = detail != null ? ' ($detail)' : '';
     return '$who $verb$tgt$extra · ${timeAgo(createdAt)}';
-  }
-}
-
-class _MemberRow extends StatelessWidget {
-  const _MemberRow({
-    required this.member,
-    required this.onRemove,
-    required this.onMakeOwner,
-    required this.onToggleAdmin,
-    required this.onBan,
-    required this.onMute,
-  });
-  final _Member member;
-  final VoidCallback onRemove;
-  final VoidCallback onMakeOwner;
-  final VoidCallback onToggleAdmin;
-  final VoidCallback onBan;
-  final VoidCallback onMute;
-
-  @override
-  Widget build(BuildContext context) {
-    final name = member.username ?? 'Member';
-    final isOwner = member.role == 'owner';
-    final isAdmin = member.role == 'admin';
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Container(
-            width: 36, height: 36,
-            decoration: const BoxDecoration(color: AppColors.graphiteRaised, shape: BoxShape.circle),
-            alignment: Alignment.center,
-            child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: GoogleFonts.inter(color: AppColors.steel, fontWeight: FontWeight.w700)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(name, style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15)),
-          ),
-          if (isAdmin)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: Text('Admin',
-                  style: GoogleFonts.inter(color: AppColors.steel, fontSize: 12, fontWeight: FontWeight.w700)),
-            ),
-          if (isOwner)
-            Text('Owner', style: GoogleFonts.inter(color: AppColors.ember, fontSize: 12, fontWeight: FontWeight.w700))
-          else
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: AppColors.steel, size: 20),
-              color: AppColors.graphiteRaised,
-              onSelected: (v) => switch (v) {
-                'owner' => onMakeOwner(),
-                'admin' => onToggleAdmin(),
-                'mute' => onMute(),
-                'ban' => onBan(),
-                _ => onRemove(),
-              },
-              itemBuilder: (_) => [
-                PopupMenuItem(value: 'admin', child: Text(isAdmin ? 'Remove admin' : 'Make admin')),
-                const PopupMenuItem(value: 'owner', child: Text('Make owner')),
-                const PopupMenuItem(value: 'mute', child: Text('Mute…')),
-                const PopupMenuItem(value: 'remove', child: Text('Remove from club')),
-                const PopupMenuItem(value: 'ban', child: Text('Ban from club')),
-              ],
-            ),
-        ],
-      ),
-    );
   }
 }
 

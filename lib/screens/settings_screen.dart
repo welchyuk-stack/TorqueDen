@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/screens/about_screen.dart';
+import 'package:torqueden/screens/account_screen.dart';
+import 'package:torqueden/screens/notifications_screen.dart';
 import 'package:torqueden/theme.dart';
 
 /// Settings tab — account management and app settings.
@@ -51,16 +54,29 @@ class SettingsScreen extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
             const _SectionHeader('Account'),
-            const _SettingTile(icon: Icons.person_outline, label: 'Profile'),
-            const _SettingTile(icon: Icons.alternate_email, label: 'Username & email'),
-            const _SettingTile(icon: Icons.lock_outline, label: 'Password & security'),
-            const _SectionHeader('Privacy & data'),
-            const _SettingTile(icon: Icons.visibility_outlined, label: 'Privacy'),
-            const _SettingTile(icon: Icons.policy_outlined, label: 'Data & policies'),
-            const _SettingTile(icon: Icons.download_outlined, label: 'Download my data'),
+            _SettingTile(
+              icon: Icons.person_outline,
+              label: 'Account',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AccountScreen()),
+              ),
+            ),
             const _SectionHeader('App'),
-            const _SettingTile(icon: Icons.notifications_none, label: 'Notifications'),
-            const _SettingTile(icon: Icons.info_outline, label: 'About TorqueDen'),
+            _SettingTile(
+              icon: Icons.notifications_none,
+              label: 'Notifications',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+              ),
+            ),
+            const _SettingTile(icon: Icons.policy_outlined, label: 'Data & policies'),
+            _SettingTile(
+              icon: Icons.info_outline,
+              label: 'About TorqueDen',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AboutScreen()),
+              ),
+            ),
             _SettingTile(
               icon: Icons.logout,
               label: 'Log out',
