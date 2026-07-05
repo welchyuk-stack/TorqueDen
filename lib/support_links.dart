@@ -14,9 +14,9 @@ class SupportLinks {
   static const String playStoreUrl =
       'https://play.google.com/store/apps/details?id=com.torqueden.app';
 
-  // Hosted legal pages (docs/ served via GitHub Pages). Update the base if the
-  // hosting location changes.
-  static const String _policiesBase = 'https://welchyuk-stack.github.io/TorqueDen';
+  // Hosted legal pages — served via GitHub Pages from the public
+  // welchyuk-stack/torqueden-legal repo. Update the base if hosting moves.
+  static const String _policiesBase = 'https://welchyuk-stack.github.io/torqueden-legal';
   static const String privacyPolicyUrl = '$_policiesBase/privacy-policy.html';
   static const String termsUrl = '$_policiesBase/terms-of-service.html';
   static const String communityGuidelinesUrl = '$_policiesBase/community-guidelines.html';
