@@ -156,14 +156,37 @@ class _MembershipScreenState extends State<MembershipScreen> {
     );
   }
 
+  // Planned launch prices, shown as a preview before RevenueCat is wired. Once
+  // IAP is live the real (localized) App Store prices from the offering replace
+  // these. Keep in sync with the pricing plan.
+  static const _plannedAnnualLabel = 'Annual · £24.99/yr';
+  static const _plannedMonthlyLabel = 'Monthly · £2.99/mo';
+  static const _plannedHeadline = 'From £2.99/mo';
+
   Widget _buildPremiumCard(bool isPremium) {
     final packages = _premiumPackages;
-    // Headline price = cheapest available package's price string, if any.
-    final price = _iapReady ? _premiumHeadlinePrice(packages) : 'Pricing TBD';
+    final buttons = <_PurchaseButton>[];
+    if (!isPremium) {
+      if (_iapReady) {
+        // Live store packages — real prices, real purchases.
+        for (final p in packages) {
+          buttons.add(_PurchaseButton(
+            label: '${_packageLabel(p)} · ${p.storeProduct.priceString}',
+            onPressed: _busy ? null : () => _buy(p),
+          ));
+        }
+      } else {
+        // Pre-IAP preview: planned prices; tapping explains it's coming.
+        buttons.addAll([
+          _PurchaseButton(label: _plannedAnnualLabel, onPressed: _busy ? null : () => _comingSoon('Premium')),
+          _PurchaseButton(label: _plannedMonthlyLabel, onPressed: _busy ? null : () => _comingSoon('Premium')),
+        ]);
+      }
+    }
     return _TierCard(
       name: 'Premium',
       tagline: 'No ads',
-      price: price,
+      price: _iapReady ? _premiumHeadlinePrice(packages) : _plannedHeadline,
       highlight: true,
       current: isPremium,
       features: const [
@@ -171,19 +194,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
         'Unlimited cars in your garage',
         'Unlimited clubs — including private',
       ],
-      // When IAP is live show a buy button per package; otherwise a single
-      // "coming soon" CTA (handled by _TierCard's ctaLabel).
-      purchaseButtons: (_iapReady && !isPremium)
-          ? [
-              for (final p in packages)
-                _PurchaseButton(
-                  label: '${_packageLabel(p)} · ${p.storeProduct.priceString}',
-                  onPressed: _busy ? null : () => _buy(p),
-                ),
-            ]
-          : null,
-      ctaLabel: (!_iapReady && !isPremium) ? 'Upgrade' : null,
-      onTap: (!_iapReady && !isPremium) ? () => _comingSoon('Premium') : null,
+      purchaseButtons: buttons.isEmpty ? null : buttons,
       busy: _busy,
     );
   }
@@ -246,8 +257,6 @@ class _TierCard extends StatelessWidget {
     this.current = false,
     this.highlight = false,
     this.comingSoon = false,
-    this.ctaLabel,
-    this.onTap,
     this.purchaseButtons,
     this.busy = false,
   });
@@ -259,8 +268,6 @@ class _TierCard extends StatelessWidget {
   final bool current;
   final bool highlight;
   final bool comingSoon;
-  final String? ctaLabel;
-  final VoidCallback? onTap;
   final List<_PurchaseButton>? purchaseButtons;
   final bool busy;
 
@@ -365,16 +372,6 @@ class _TierCard extends StatelessWidget {
                   ),
                 ),
               ),
-          ] else if (ctaLabel != null) ...[
-            const SizedBox(height: 6),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: onTap,
-                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 13)),
-                child: Text(ctaLabel!),
-              ),
-            ),
           ],
         ],
       ),

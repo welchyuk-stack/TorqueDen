@@ -21,14 +21,26 @@ class CarDetailScreen extends StatefulWidget {
   State<CarDetailScreen> createState() => _CarDetailScreenState();
 }
 
-class _CarDetailScreenState extends State<CarDetailScreen> {
+class _CarDetailScreenState extends State<CarDetailScreen>
+    with SingleTickerProviderStateMixin {
   late Car _car;
   bool _deleting = false;
+  late final TabController _tabs;
 
   @override
   void initState() {
     super.initState();
     _car = widget.car;
+    _tabs = TabController(length: 3, vsync: this)
+      ..addListener(() {
+        if (mounted) setState(() {}); // keep the icon rail's highlight in sync
+      });
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    super.dispose();
   }
 
   Future<void> _edit() async {
@@ -110,39 +122,28 @@ class _CarDetailScreenState extends State<CarDetailScreen> {
         ],
       ),
       body: SafeArea(
-        child: DefaultTabController(
-          length: 3,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-                child: _Header(car: _car, showFollow: !isOwn),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: _Header(
+                car: _car,
+                showFollow: !isOwn,
+                tabIndex: _tabs.index,
+                onTabTap: (i) => _tabs.animateTo(i),
               ),
-              const TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.center,
-                labelColor: AppColors.cream,
-                unselectedLabelColor: AppColors.steel,
-                indicatorColor: AppColors.ember,
-                indicatorWeight: 2.5,
-                dividerColor: AppColors.hairline,
-                tabs: [
-                  Tab(text: 'Specs'),
-                  Tab(text: 'Build'),
-                  Tab(text: 'Posts'),
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabs,
+                children: [
+                  SpecsTab(car: _car),
+                  BuildTab(car: _car),
+                  PostsTab(car: _car),
                 ],
               ),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    SpecsTab(car: _car),
-                    BuildTab(car: _car),
-                    PostsTab(car: _car),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -152,10 +153,17 @@ class _CarDetailScreenState extends State<CarDetailScreen> {
 /// Hero block: the car's photo (or a fallback), with its name and — for cars
 /// you don't own — a follow button.
 class _Header extends StatelessWidget {
-  const _Header({required this.car, this.showFollow = false});
+  const _Header({
+    required this.car,
+    required this.tabIndex,
+    required this.onTabTap,
+    this.showFollow = false,
+  });
 
   final Car car;
   final bool showFollow;
+  final int tabIndex;
+  final ValueChanged<int> onTabTap;
 
   @override
   Widget build(BuildContext context) {
@@ -177,37 +185,108 @@ class _Header extends StatelessWidget {
                 : const _HeaderFallback(),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
+        // Nickname on the left; the three tab icons sit horizontally under the
+        // right of the photo.
         Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    car.title,
-                    style: GoogleFonts.archivo(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.cream,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    car.subtitle,
-                    style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary),
-                  ),
-                ],
+              child: Text(
+                car.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.archivo(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.cream,
+                ),
               ),
             ),
             if (showFollow) ...[
               const SizedBox(width: 12),
               FollowButton(carId: car.id),
             ],
+            const SizedBox(width: 12),
+            _TabRail(index: tabIndex, onTap: onTabTap),
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Horizontal tab selector: three circular icon buttons that sit under the
+/// right of the photo. Spanner = Specs, car outline = Build, grid = Posts.
+class _TabRail extends StatelessWidget {
+  const _TabRail({required this.index, required this.onTap});
+
+  final int index;
+  final ValueChanged<int> onTap;
+
+  static const _items = <({IconData icon, String label})>[
+    (icon: Icons.build_outlined, label: 'Specs'), // spanner
+    (icon: Icons.directions_car_outlined, label: 'Build'), // car outline
+    (icon: Icons.grid_view_outlined, label: 'Posts'), // grid
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < _items.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          _RailIcon(
+            icon: _items[i].icon,
+            label: _items[i].label,
+            selected: i == index,
+            onTap: () => onTap(i),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RailIcon extends StatelessWidget {
+  const _RailIcon({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: selected ? AppColors.ember : AppColors.graphite,
+            border: Border.all(
+              color: selected ? AppColors.ember : AppColors.hairline,
+              width: 1.5,
+            ),
+          ),
+          child: Icon(
+            icon,
+            size: 22,
+            color: selected ? AppColors.onEmber : AppColors.steel,
+          ),
+        ),
+      ),
     );
   }
 }

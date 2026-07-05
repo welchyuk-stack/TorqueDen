@@ -150,6 +150,55 @@ class _BuildTabState extends State<BuildTab> {
     await _refresh();
   }
 
+  /// Bucket for entries with no mod category.
+  static const _generalLabel = 'General';
+
+  /// Group entries by category label (uncategorised → "General").
+  Map<String, List<BuildEntry>> _group(List<BuildEntry> entries) {
+    final map = <String, List<BuildEntry>>{};
+    for (final e in entries) {
+      final key = e.hasCategory ? e.category!.trim() : _generalLabel;
+      (map[key] ??= []).add(e);
+    }
+    return map;
+  }
+
+  /// Categories to show, in preset order, then any stragglers, "General" last.
+  List<String> _orderedKeys(Map<String, List<BuildEntry>> grouped) {
+    final keys = <String>[
+      for (final c in kModCategories)
+        if (grouped.containsKey(c)) c,
+      for (final k in grouped.keys)
+        if (!kModCategories.contains(k) && k != _generalLabel) k,
+    ];
+    if (grouped.containsKey(_generalLabel)) keys.add(_generalLabel);
+    return keys;
+  }
+
+  /// Drill into a single entry: full detail sheet, with owner edit/delete.
+  Future<void> _openDetail(BuildEntry entry) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.graphite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => _EntryDetailSheet(
+        entry: entry,
+        canManage: _canManage,
+        onEdit: () {
+          Navigator.of(sheetCtx).pop();
+          _openEditor(entry: entry);
+        },
+        onDelete: () {
+          Navigator.of(sheetCtx).pop();
+          _confirmDelete(entry);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
@@ -210,17 +259,16 @@ class _BuildTabState extends State<BuildTab> {
             );
           }
 
-          // Owners get an "Add update" button as the first row; others don't.
-          final headerCount = _canManage ? 1 : 0;
-          return ListView.separated(
+          // Category grid: entries grouped into fixed cards, each previewing up
+          // to three slots with a pop-down drill-in for the rest.
+          final grouped = _group(entries);
+          final keys = _orderedKeys(grouped);
+          return ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(16),
-            itemCount: entries.length + headerCount,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
-            itemBuilder: (context, i) {
-              if (_canManage && i == 0) {
-                return Align(
-                  alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.all(12),
+            children: [
+              if (_canManage) ...[
+                Center(
                   child: OutlinedButton.icon(
                     onPressed: _openEditor,
                     icon: const Icon(Icons.add, size: 20),
@@ -228,29 +276,36 @@ class _BuildTabState extends State<BuildTab> {
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.ember,
                       side: const BorderSide(color: AppColors.hairline),
-                      textStyle: GoogleFonts.inter(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                      textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
-                );
-              }
-              final entry = entries[i - headerCount];
-              return _BuildEntryCard(
-                entry: entry,
-                canManage: _canManage,
-                onEdit: () => _openEditor(entry: entry),
-                onDelete: () => _confirmDelete(entry),
-              );
-            },
+                ),
+                const SizedBox(height: 12),
+              ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  const gap = 12.0;
+                  final cardW = (constraints.maxWidth - gap) / 2;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final k in keys)
+                        SizedBox(
+                          width: cardW,
+                          child: _CategoryCard(
+                            label: k,
+                            entries: grouped[k]!,
+                            onOpen: _openDetail,
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
           );
         },
       ),
@@ -258,9 +313,206 @@ class _BuildTabState extends State<BuildTab> {
   }
 }
 
-/// One card in the build timeline: date, title, optional body, edit + delete.
-class _BuildEntryCard extends StatelessWidget {
-  const _BuildEntryCard({
+/// One category cell in the build grid: a labelled card previewing up to three
+/// entry "slots". If the category has more, a three-dot control pops the rest
+/// down inline (drill-in). Tapping a slot opens the entry's detail sheet.
+class _CategoryCard extends StatefulWidget {
+  const _CategoryCard({
+    required this.label,
+    required this.entries,
+    required this.onOpen,
+  });
+
+  final String label;
+  final List<BuildEntry> entries;
+  final void Function(BuildEntry) onOpen;
+
+  @override
+  State<_CategoryCard> createState() => _CategoryCardState();
+}
+
+class _CategoryCardState extends State<_CategoryCard> {
+  static const _slots = 2;
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = widget.entries;
+    final hasMore = entries.length > _slots;
+    final visible = _expanded ? entries : entries.take(_slots).toList();
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
+      decoration: BoxDecoration(
+        color: AppColors.graphite,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                    color: AppColors.ember,
+                  ),
+                ),
+              ),
+              Text(
+                '${entries.length}',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.steel,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          // The slots pop down smoothly when expanded.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final e in visible)
+                  _EntrySlot(entry: e, onTap: () => widget.onOpen(e)),
+                // Faint placeholders fill an under-filled card up to the slot
+                // count so cards paired in a row line up and the grid reads
+                // evenly. Only in the collapsed preview.
+                if (!_expanded)
+                  for (var i = visible.length; i < _slots; i++) const _GhostSlot(),
+              ],
+            ),
+          ),
+          // Bottom control — always reserves the same height so collapsed cards
+          // line up: centred three-dots to drill in (or collapse), otherwise a
+          // matching empty spacer.
+          SizedBox(
+            height: 22,
+            width: double.infinity,
+            child: hasMore
+                ? InkWell(
+                    onTap: () => setState(() => _expanded = !_expanded),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Center(
+                      child: Icon(
+                        _expanded ? Icons.expand_less : Icons.more_horiz,
+                        size: 18,
+                        color: AppColors.steel,
+                      ),
+                    ),
+                  )
+                : null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A single compact entry row inside a category card: title + date, a media
+/// hint, tappable to open the full detail sheet.
+class _EntrySlot extends StatelessWidget {
+  const _EntrySlot({required this.entry, required this.onTap});
+
+  final BuildEntry entry;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: const BoxDecoration(color: AppColors.ember, shape: BoxShape.circle),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    entry.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.cream,
+                    ),
+                  ),
+                  Text(
+                    _formatDate(entry.createdAt),
+                    style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            if (entry.hasMedia)
+              const Icon(Icons.photo_outlined, size: 14, color: AppColors.steel),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A faint, empty placeholder occupying one slot — used to pad short cards so
+/// the grid rows line up. Matches an [_EntrySlot]'s footprint.
+class _GhostSlot extends StatelessWidget {
+  const _GhostSlot();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: AppColors.hairline.withValues(alpha: 0.6),
+              shape: BoxShape.circle,
+            ),
+          ),
+          Expanded(
+            child: Container(
+              height: 32,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.hairline.withValues(alpha: 0.5)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Full read view of one build entry (the drill-in target): date, title, media,
+/// body, linked-mod, plus edit/delete for the owner.
+class _EntryDetailSheet extends StatelessWidget {
+  const _EntryDetailSheet({
     required this.entry,
     required this.canManage,
     required this.onEdit,
@@ -277,98 +529,90 @@ class _BuildEntryCard extends StatelessWidget {
     final body = entry.body?.trim();
     final hasBody = body != null && body.isNotEmpty;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 8, 16),
-      decoration: BoxDecoration(
-        color: AppColors.graphite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.hairline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        if (entry.hasCategory) ...[
-                          _CategoryChip(label: entry.category!),
-                          const SizedBox(width: 8),
-                        ],
-                        Flexible(
-                          child: Text(
-                            _formatDate(entry.createdAt).toUpperCase(),
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 12,
-                              letterSpacing: 0.5,
-                              color: AppColors.ember,
-                            ),
-                          ),
-                        ),
-                      ],
+              Row(
+                children: [
+                  if (entry.hasCategory) ...[
+                    _CategoryChip(label: entry.category!),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    _formatDate(entry.createdAt).toUpperCase(),
+                    style: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                      letterSpacing: 0.5,
+                      color: AppColors.ember,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      entry.title,
-                      style: GoogleFonts.archivo(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 17,
-                        color: AppColors.cream,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                entry.title,
+                style: GoogleFonts.archivo(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 20,
+                  color: AppColors.cream,
+                ),
+              ),
+              if (entry.hasMedia) ...[
+                const SizedBox(height: 12),
+                PostMediaView(media: entry.media),
+              ],
+              if (hasBody) ...[
+                const SizedBox(height: 10),
+                Text(
+                  body,
+                  style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.5),
+                ),
+              ],
+              if (entry.hasLinkedMod) ...[
+                const SizedBox(height: 12),
+                LinkedModChip(label: entry.linkedModLabel!),
+              ],
+              if (canManage) ...[
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onEdit,
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('Edit'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.ember,
+                          side: const BorderSide(color: AppColors.hairline),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: onDelete,
+                        icon: const Icon(Icons.delete_outline, size: 18),
+                        label: const Text('Delete'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.hairline),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ),
-              if (canManage) ...[
-                IconButton(
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit_outlined),
-                  color: AppColors.steel,
-                  tooltip: 'Edit update',
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline),
-                  color: AppColors.steel,
-                  tooltip: 'Delete update',
-                  visualDensity: VisualDensity.compact,
-                ),
               ],
             ],
           ),
-          if (entry.hasMedia) ...[
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: PostMediaView(media: entry.media),
-            ),
-          ],
-          if (hasBody) ...[
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Text(
-                body,
-                style: GoogleFonts.inter(
-                  fontSize: 15,
-                  color: AppColors.textSecondary,
-                  height: 1.5,
-                ),
-              ),
-            ),
-          ],
-          if (entry.hasLinkedMod) ...[
-            const SizedBox(height: 12),
-            LinkedModChip(label: entry.linkedModLabel!),
-          ],
-        ],
+        ),
       ),
     );
   }
