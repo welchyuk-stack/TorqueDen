@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:torqueden/features.dart';
 import 'package:torqueden/screens/video_trim_screen.dart';
 import 'package:torqueden/services/video_trim_service.dart';
 import 'package:torqueden/theme.dart';
@@ -107,7 +108,9 @@ class _CameraScreenState extends State<CameraScreen>
     final controller = CameraController(
       description,
       ResolutionPreset.high,
-      enableAudio: true,
+      // Only need the mic when recording video — off at launch avoids an
+      // unnecessary microphone permission prompt.
+      enableAudio: Features.video,
     );
     _controller = controller;
     try {
@@ -274,9 +277,11 @@ class _CameraScreenState extends State<CameraScreen>
                         Padding(
                           padding: const EdgeInsets.only(bottom: 18),
                           child: Text(
-                            _isRecording
-                                ? 'Tap to stop'
-                                : 'Tap for photo  ·  hold to record',
+                            !Features.video
+                                ? 'Tap to take a photo'
+                                : _isRecording
+                                    ? 'Tap to stop'
+                                    : 'Tap for photo  ·  hold to record',
                             style: GoogleFonts.inter(
                               fontSize: 13,
                               color: Colors.white.withValues(alpha: 0.85),
@@ -287,9 +292,12 @@ class _CameraScreenState extends State<CameraScreen>
                         GestureDetector(
                           // While recording, a tap stops it (as well as
                           // releasing the hold). Idle: tap = photo, hold = record.
+                          // Video off (launch): photo only — no hold-to-record.
                           onTap: _isRecording ? _stopRecording : _takePhoto,
-                          onLongPressStart: (_) => _startRecording(),
-                          onLongPressEnd: (_) => _stopRecording(),
+                          onLongPressStart:
+                              Features.video ? (_) => _startRecording() : null,
+                          onLongPressEnd:
+                              Features.video ? (_) => _stopRecording() : null,
                           child: _CaptureButton(ring: _ring, recording: _isRecording),
                         ),
                       ],

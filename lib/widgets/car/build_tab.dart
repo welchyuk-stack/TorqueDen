@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/features.dart';
 import 'package:torqueden/models/build_entry.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
@@ -740,8 +741,10 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
   }
 
   Future<void> _addMedia() async {
-    // pickMultipleMedia lets the user choose photos AND videos together.
-    final files = await ImagePicker().pickMultipleMedia();
+    // Video on: photos AND videos together. Video off (launch): photos only.
+    final files = Features.video
+        ? await ImagePicker().pickMultipleMedia()
+        : await ImagePicker().pickMultiImage();
     if (files.isEmpty) return;
     final added = <({String name, Uint8List bytes, bool isVideo})>[];
     for (final f in files) {

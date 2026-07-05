@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/features.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/add_car_screen.dart';
 import 'package:torqueden/screens/camera_screen.dart';
@@ -111,13 +112,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             ListTile(
               leading: const Icon(Icons.photo_camera_outlined, color: AppColors.ember),
               title: const Text('Camera'),
-              subtitle: const Text('Record a clip or take a photo'),
+              subtitle: Text(Features.video
+                  ? 'Record a clip or take a photo'
+                  : 'Take a photo'),
               onTap: () => Navigator.pop(ctx, 'camera'),
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined, color: AppColors.ember),
               title: const Text('Library'),
-              subtitle: const Text('Choose existing photos or clips'),
+              subtitle: Text(Features.video
+                  ? 'Choose existing photos or clips'
+                  : 'Choose existing photos'),
               onTap: () => Navigator.pop(ctx, 'library'),
             ),
             const SizedBox(height: 8),
@@ -199,7 +204,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _addMedia() async {
-    final files = await ImagePicker().pickMultipleMedia();
+    // Video off (launch): photos only, so the trim path below never runs.
+    final files = Features.video
+        ? await ImagePicker().pickMultipleMedia()
+        : await ImagePicker().pickMultiImage();
     if (files.isEmpty) return;
     final added = <({String name, Uint8List bytes, bool isVideo})>[];
     for (final f in files) {
