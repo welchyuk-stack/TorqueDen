@@ -12,6 +12,10 @@
 	<string>TorqueDen uses the microphone to record sound with your video clips.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>TorqueDen uses Face ID to unlock the app when you turn on biometric lock.</string>
+	<!-- App uses only standard HTTPS/system crypto (exempt), so no export
+	     compliance docs are needed and uploads skip the encryption prompt. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
