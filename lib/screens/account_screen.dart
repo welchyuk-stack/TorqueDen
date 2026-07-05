@@ -87,7 +87,7 @@ class _AccountScreenState extends State<AccountScreen> {
         await _client.storage.from(kCarPhotosBucket).uploadBinary(
               path,
               _avatarBytes!,
-              fileOptions: const FileOptions(contentType: 'image/jpeg', upsert: true),
+              fileOptions: const FileOptions(contentType: 'image/jpeg'),
             );
         avatarUrl = _client.storage.from(kCarPhotosBucket).getPublicUrl(path);
       }

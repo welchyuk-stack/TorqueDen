@@ -67,7 +67,8 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
     });
   }
 
-  /// Uploads image bytes under a stable path and returns its public URL.
+  /// Uploads image bytes and returns its public URL. Path is per-new-club so
+  /// no upsert is needed (the car-photos bucket only grants a plain INSERT).
   Future<String> _upload(SupabaseClient client, String base, Uint8List bytes, String? name) async {
     final uid = client.auth.currentUser!.id;
     final ext = (name ?? 'jpg').split('.').last.toLowerCase();
@@ -75,10 +76,7 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
     await client.storage.from(kCarPhotosBucket).uploadBinary(
           path,
           bytes,
-          fileOptions: FileOptions(
-            contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
-            upsert: true,
-          ),
+          fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'),
         );
     return client.storage.from(kCarPhotosBucket).getPublicUrl(path);
   }

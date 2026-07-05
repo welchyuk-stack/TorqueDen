@@ -79,11 +79,13 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
       var bannerUrl = _bannerUrl;
       if (_bannerBytes != null) {
         final ext = (_bannerName ?? 'jpg').split('.').last.toLowerCase();
-        final path = '$uid/partner_banner.$ext';
+        // Unique path + no upsert — the car-photos bucket only grants a plain
+        // INSERT, so overwriting (upsert) is rejected by storage RLS.
+        final path = '$uid/partner_banner_${DateTime.now().millisecondsSinceEpoch}.$ext';
         await _client.storage.from(kCarPhotosBucket).uploadBinary(
               path,
               _bannerBytes!,
-              fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg', upsert: true),
+              fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'),
             );
         bannerUrl = _client.storage.from(kCarPhotosBucket).getPublicUrl(path);
       }
