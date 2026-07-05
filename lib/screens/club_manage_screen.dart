@@ -30,6 +30,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
   final _client = Supabase.instance.client;
   final _name = TextEditingController();
   final _description = TextEditingController();
+  final _rules = TextEditingController();
 
   late Club _club;
   late Future<List<_Member>> _membersFuture;
@@ -42,6 +43,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     _club = widget.club;
     _name.text = _club.name;
     _description.text = _club.description ?? '';
+    _rules.text = _club.rules ?? '';
     _membersFuture = _loadMembers();
   }
 
@@ -49,6 +51,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
   void dispose() {
     _name.dispose();
     _description.dispose();
+    _rules.dispose();
     super.dispose();
   }
 
@@ -75,10 +78,12 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
   Future<void> _saveDetails() async {
     setState(() => _savingDetails = true);
     final desc = _description.text.trim();
+    final rules = _rules.text.trim();
     try {
       final rows = await _client.from('clubs').update({
         'name': _name.text.trim(),
         'description': desc.isEmpty ? null : desc,
+        'rules': rules.isEmpty ? null : rules,
       }).eq('id', _club.id).select('*, club_members(count)');
       _club = Club.fromMap(rows.first);
       _snack('Club updated');
@@ -133,6 +138,53 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     }
   }
 
+  Future<void> _toggleArchive(bool archived) async {
+    final prev = _club.isArchived;
+    setState(() => _club = _copyWith(isArchived: archived));
+    try {
+      await _client.from('clubs').update({'is_archived': archived}).eq('id', _club.id);
+    } catch (e) {
+      if (mounted) setState(() => _club = _copyWith(isArchived: prev));
+      _snack('Could not update archive: $e');
+    }
+  }
+
+  Future<void> _transferOwnership(_Member m) async {
+    final name = m.username ?? 'this member';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Make $name the owner?',
+            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: Text('You\'ll become a regular member and lose admin control of this club.',
+            style: GoogleFonts.inter(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Transfer', style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final me = _client.auth.currentUser!.id;
+    try {
+      // Roles first (while still owner), then hand over owner_id.
+      await _client.from('club_members').update({'role': 'owner'}).eq('club_id', _club.id).eq('user_id', m.userId);
+      await _client.from('club_members').update({'role': 'member'}).eq('club_id', _club.id).eq('user_id', me);
+      final rows = await _client
+          .from('clubs')
+          .update({'owner_id': m.userId})
+          .eq('id', _club.id)
+          .select('*, club_members(count)');
+      if (mounted) Navigator.of(context).pop(ClubManageResult(club: Club.fromMap(rows.first)));
+    } catch (e) {
+      _snack('Could not transfer ownership: $e');
+    }
+  }
+
   Future<void> _removeMember(_Member m) async {
     try {
       await _client
@@ -175,7 +227,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     }
   }
 
-  Club _copyWith({bool? isLocked}) => Club(
+  Club _copyWith({bool? isLocked, bool? isArchived}) => Club(
         id: _club.id,
         name: _club.name,
         description: _club.description,
@@ -183,6 +235,8 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
         ownerId: _club.ownerId,
         createdAt: _club.createdAt,
         isLocked: isLocked ?? _club.isLocked,
+        isArchived: isArchived ?? _club.isArchived,
+        rules: _club.rules,
         memberCount: _club.memberCount,
       );
 
@@ -237,6 +291,17 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                 style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
                 decoration: const InputDecoration(labelText: 'Description'),
               ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _rules,
+                maxLines: 5,
+                textCapitalization: TextCapitalization.sentences,
+                style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                decoration: const InputDecoration(
+                  labelText: 'Club rules',
+                  hintText: 'House rules shown at the top of the club.',
+                ),
+              ),
               const SizedBox(height: 12),
               Align(
                 alignment: Alignment.centerLeft,
@@ -267,6 +332,25 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                   secondary: Icon(_club.isLocked ? Icons.lock : Icons.lock_open, color: AppColors.steel),
                 ),
               ),
+              const SizedBox(height: 10),
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.graphite,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.hairline),
+                ),
+                child: SwitchListTile(
+                  value: _club.isArchived,
+                  onChanged: _toggleArchive,
+                  activeThumbColor: AppColors.ember,
+                  title: Text('Archive club',
+                      style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                  subtitle: Text('Read-only — nobody can post, including you.',
+                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                  secondary: Icon(_club.isArchived ? Icons.inventory_2 : Icons.inventory_2_outlined,
+                      color: AppColors.steel),
+                ),
+              ),
               const SizedBox(height: 24),
 
               // Members
@@ -288,8 +372,8 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                       for (final m in members)
                         _MemberRow(
                           member: m,
-                          canRemove: m.role != 'owner',
                           onRemove: () => _removeMember(m),
+                          onMakeOwner: () => _transferOwnership(m),
                         ),
                     ],
                   );
@@ -325,14 +409,15 @@ class _Member {
 }
 
 class _MemberRow extends StatelessWidget {
-  const _MemberRow({required this.member, required this.canRemove, required this.onRemove});
+  const _MemberRow({required this.member, required this.onRemove, required this.onMakeOwner});
   final _Member member;
-  final bool canRemove;
   final VoidCallback onRemove;
+  final VoidCallback onMakeOwner;
 
   @override
   Widget build(BuildContext context) {
     final name = member.username ?? 'Member';
+    final isOwner = member.role == 'owner';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -348,12 +433,17 @@ class _MemberRow extends StatelessWidget {
           Expanded(
             child: Text(name, style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15)),
           ),
-          if (member.role == 'owner')
+          if (isOwner)
             Text('Owner', style: GoogleFonts.inter(color: AppColors.ember, fontSize: 12, fontWeight: FontWeight.w700))
-          else if (canRemove)
-            TextButton(
-              onPressed: onRemove,
-              child: Text('Remove', style: GoogleFonts.inter(color: AppColors.danger, fontSize: 13, fontWeight: FontWeight.w600)),
+          else
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: AppColors.steel, size: 20),
+              color: AppColors.graphiteRaised,
+              onSelected: (v) => v == 'owner' ? onMakeOwner() : onRemove(),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'owner', child: Text('Make owner')),
+                const PopupMenuItem(value: 'remove', child: Text('Remove from club')),
+              ],
             ),
         ],
       ),

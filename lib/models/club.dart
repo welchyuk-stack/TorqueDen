@@ -8,6 +8,8 @@ class Club {
     required this.ownerId,
     required this.createdAt,
     this.isLocked = false,
+    this.isArchived = false,
+    this.rules,
     this.memberCount = 0,
   });
 
@@ -18,6 +20,8 @@ class Club {
   final String ownerId;
   final DateTime createdAt;
   final bool isLocked;
+  final bool isArchived;
+  final String? rules;
 
   /// Populated when the query embeds `club_members(count)`.
   final int memberCount;
@@ -42,6 +46,8 @@ class Club {
       ownerId: map['owner_id'] as String,
       createdAt: DateTime.parse(map['created_at'] as String),
       isLocked: (map['is_locked'] as bool?) ?? false,
+      isArchived: (map['is_archived'] as bool?) ?? false,
+      rules: map['rules'] as String?,
       memberCount: _embeddedCount(map['club_members']),
     );
   }

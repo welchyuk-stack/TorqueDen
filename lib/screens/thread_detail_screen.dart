@@ -32,6 +32,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
 
   late Future<List<ClubReply>> _future;
   bool _sending = false;
+  late bool _pinned = widget.thread.isPinned;
 
   String? get _uid => _client.auth.currentUser?.id;
 
@@ -39,6 +40,18 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
   void initState() {
     super.initState();
     _future = _load();
+  }
+
+  Future<void> _togglePin() async {
+    final next = !_pinned;
+    setState(() => _pinned = next);
+    try {
+      await _client.from('club_threads').update({'is_pinned': next}).eq('id', widget.thread.id);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _pinned = !next);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not update pin: $e')));
+    }
   }
 
   @override
@@ -104,7 +117,18 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
     final t = widget.thread;
     final body = t.body?.trim() ?? '';
     return Scaffold(
-      appBar: AppBar(title: const Text('Thread')),
+      appBar: AppBar(
+        title: const Text('Thread'),
+        actions: [
+          if (widget.isOwner)
+            IconButton(
+              onPressed: _togglePin,
+              icon: Icon(_pinned ? Icons.push_pin : Icons.push_pin_outlined,
+                  color: _pinned ? AppColors.ember : AppColors.steel),
+              tooltip: _pinned ? 'Unpin' : 'Pin to top',
+            ),
+        ],
+      ),
       body: SafeArea(
         child: Column(
           children: [

@@ -9,6 +9,7 @@ class ClubThread {
     required this.createdAt,
     this.authorName,
     this.replyCount = 0,
+    this.isPinned = false,
   });
 
   final String id;
@@ -17,6 +18,7 @@ class ClubThread {
   final String title;
   final String? body;
   final DateTime createdAt;
+  final bool isPinned;
 
   /// From embedded `author:profiles(username)`.
   final String? authorName;
@@ -47,6 +49,7 @@ class ClubThread {
       createdAt: DateTime.parse(map['created_at'] as String),
       authorName: _authorName(map['author']),
       replyCount: _embeddedCount(map['club_replies']),
+      isPinned: (map['is_pinned'] as bool?) ?? false,
     );
   }
 }

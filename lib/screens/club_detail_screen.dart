@@ -33,7 +33,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
 
   String? get _uid => _client.auth.currentUser?.id;
   bool get _isOwner => _uid != null && _uid == _club.ownerId;
-  bool get _canPost => _member && (!_club.isLocked || _isOwner);
+  bool get _canPost => _member && !_club.isArchived && (!_club.isLocked || _isOwner);
 
   @override
   void initState() {
@@ -55,6 +55,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
         .from('club_threads')
         .select('*, author:profiles(username), club_replies(count)')
         .eq('club_id', _club.id)
+        .order('is_pinned', ascending: false)
         .order('created_at', ascending: false);
     if (mounted) setState(() {}); // reflect membership/count
     return rows
@@ -274,6 +275,23 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                 ),
               ),
             ],
+            if (_club.isArchived) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.graphiteRaised,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: AppColors.hairline),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.inventory_2_outlined, size: 13, color: AppColors.steel),
+                  const SizedBox(width: 5),
+                  Text('Archived',
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.steel)),
+                ]),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 4),
@@ -284,6 +302,29 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
         if (desc.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(desc, style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.45)),
+        ],
+        if (_club.rules?.trim().isNotEmpty == true) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.graphite,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.hairline),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('RULES',
+                    style: GoogleFonts.inter(
+                        fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.8, color: AppColors.ember)),
+                const SizedBox(height: 6),
+                Text(_club.rules!.trim(),
+                    style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.45)),
+              ],
+            ),
+          ),
         ],
         const SizedBox(height: 16),
         SizedBox(
@@ -343,11 +384,24 @@ class _ThreadRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    thread.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.cream),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (thread.isPinned) ...[
+                        const Padding(
+                          padding: EdgeInsets.only(top: 2, right: 6),
+                          child: Icon(Icons.push_pin, size: 14, color: AppColors.ember),
+                        ),
+                      ],
+                      Expanded(
+                        child: Text(
+                          thread.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.cream),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 5),
                   Text(

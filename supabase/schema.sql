@@ -1,13 +1,11 @@
 -- ============================================================================
--- TorqueDen — live database schema (public schema only)
+-- TorqueDen — live database schema (public schema only), pg_dump snapshot.
+-- Recreate with: psql "<conn>" -f supabase/schema.sql
 --
--- Captured with `pg_dump --schema-only` from the production Supabase project.
--- Source-of-truth snapshot. Recreate with: psql "<conn>" -f supabase/schema.sql
---
--- Applied migrations (see supabase/migrations/):
+-- Applied migrations (supabase/migrations/):
 --   0001_car_location · 0002_merge_mods_into_build · 0003_post_link_to_mod
---   0004_fuzz_car_locations · 0005_clubs · 0006_club_admin (lock + owner remove)
---   0007_reports_blocks (moderation: report content/users + block users)
+--   0004_fuzz_car_locations · 0005_clubs · 0006_club_admin · 0007_reports_blocks
+--   0008_club_pins_rules_archive (pinned threads, club rules, archive, transfer)
 --
 -- Not included: table data; the auth.users trigger for handle_new_user()
 -- (recreate: CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
@@ -18,7 +16,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict mYGWCbDivupBXARegIjSclhNp1NMDhpatfU6OWgXLdkwNU0e2JrDHvDwC8cvtzd
+\restrict 5g2veKMlYuB9VgcdxeZdJUcqAJSe4QkzUPa1TjNua8wPnNUVe2IzPpTOG1FbUSQ
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -185,7 +183,8 @@ CREATE TABLE public.club_threads (
     author_id uuid DEFAULT auth.uid() NOT NULL,
     title text NOT NULL,
     body text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    is_pinned boolean DEFAULT false NOT NULL
 );
 
 
@@ -201,7 +200,9 @@ CREATE TABLE public.clubs (
     owner_id uuid DEFAULT auth.uid() NOT NULL,
     is_public boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    is_locked boolean DEFAULT false NOT NULL
+    is_locked boolean DEFAULT false NOT NULL,
+    rules text,
+    is_archived boolean DEFAULT false NOT NULL
 );
 
 
@@ -862,7 +863,9 @@ CREATE POLICY "Members are viewable by everyone" ON public.club_members FOR SELE
 
 CREATE POLICY "Members can post threads" ON public.club_threads FOR INSERT WITH CHECK (((author_id = auth.uid()) AND (EXISTS ( SELECT 1
    FROM public.club_members m
-  WHERE ((m.club_id = club_threads.club_id) AND (m.user_id = auth.uid())))) AND ((EXISTS ( SELECT 1
+  WHERE ((m.club_id = club_threads.club_id) AND (m.user_id = auth.uid())))) AND (NOT (EXISTS ( SELECT 1
+   FROM public.clubs c
+  WHERE ((c.id = club_threads.club_id) AND c.is_archived)))) AND ((EXISTS ( SELECT 1
    FROM public.clubs c
   WHERE ((c.id = club_threads.club_id) AND (c.owner_id = auth.uid())))) OR (NOT (EXISTS ( SELECT 1
    FROM public.clubs c
@@ -876,13 +879,25 @@ CREATE POLICY "Members can post threads" ON public.club_threads FOR INSERT WITH 
 CREATE POLICY "Members can reply" ON public.club_replies FOR INSERT WITH CHECK (((author_id = auth.uid()) AND (EXISTS ( SELECT 1
    FROM (public.club_members m
      JOIN public.club_threads t ON ((t.club_id = m.club_id)))
-  WHERE ((t.id = club_replies.thread_id) AND (m.user_id = auth.uid())))) AND ((EXISTS ( SELECT 1
+  WHERE ((t.id = club_replies.thread_id) AND (m.user_id = auth.uid())))) AND (NOT (EXISTS ( SELECT 1
+   FROM (public.club_threads t
+     JOIN public.clubs c ON ((c.id = t.club_id)))
+  WHERE ((t.id = club_replies.thread_id) AND c.is_archived)))) AND ((EXISTS ( SELECT 1
    FROM (public.club_threads t
      JOIN public.clubs c ON ((c.id = t.club_id)))
   WHERE ((t.id = club_replies.thread_id) AND (c.owner_id = auth.uid())))) OR (NOT (EXISTS ( SELECT 1
    FROM (public.club_threads t
      JOIN public.clubs c ON ((c.id = t.club_id)))
   WHERE ((t.id = club_replies.thread_id) AND c.is_locked)))))));
+
+
+--
+-- Name: club_members Owner manages roles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Owner manages roles" ON public.club_members FOR UPDATE USING ((EXISTS ( SELECT 1
+   FROM public.clubs c
+  WHERE ((c.id = club_members.club_id) AND (c.owner_id = auth.uid())))));
 
 
 --
@@ -1407,5 +1422,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict mYGWCbDivupBXARegIjSclhNp1NMDhpatfU6OWgXLdkwNU0e2JrDHvDwC8cvtzd
+\unrestrict 5g2veKMlYuB9VgcdxeZdJUcqAJSe4QkzUPa1TjNua8wPnNUVe2IzPpTOG1FbUSQ
 
