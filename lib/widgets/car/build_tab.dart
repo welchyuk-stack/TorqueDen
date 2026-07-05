@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/build_entry.dart';
 import 'package:torqueden/models/car.dart';
+import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/post_media_view.dart';
@@ -41,6 +42,12 @@ class _BuildTabState extends State<BuildTab> {
   final _client = Supabase.instance.client;
   late Future<List<BuildEntry>> _entriesFuture;
 
+  /// Only the car's owner can add/edit/delete build updates.
+  bool get _canManage {
+    final uid = _client.auth.currentUser?.id;
+    return uid != null && widget.car.ownerId != null && uid == widget.car.ownerId;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -69,7 +76,7 @@ class _BuildTabState extends State<BuildTab> {
     await future;
   }
 
-  Future<void> _openEditor() async {
+  Future<void> _openEditor({BuildEntry? entry}) async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -77,7 +84,7 @@ class _BuildTabState extends State<BuildTab> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _BuildEntrySheet(carId: widget.car.id),
+      builder: (_) => _BuildEntrySheet(carId: widget.car.id, entry: entry),
     );
     if (saved == true) {
       await _refresh();
@@ -187,24 +194,30 @@ class _BuildTabState extends State<BuildTab> {
                 EmptyState(
                   icon: Icons.timeline_outlined,
                   title: 'No build updates yet',
-                  message: 'Log your first update — a milestone, a fix, a plan.',
-                  action: FilledButton.icon(
-                    onPressed: _openEditor,
-                    icon: const Icon(Icons.add, size: 20),
-                    label: const Text('Add update'),
-                  ),
+                  message: _canManage
+                      ? 'Log your first update — a milestone, a fix, a plan.'
+                      : 'This build doesn\'t have any updates yet.',
+                  action: _canManage
+                      ? FilledButton.icon(
+                          onPressed: _openEditor,
+                          icon: const Icon(Icons.add, size: 20),
+                          label: const Text('Add update'),
+                        )
+                      : null,
                 ),
               ],
             );
           }
 
+          // Owners get an "Add update" button as the first row; others don't.
+          final headerCount = _canManage ? 1 : 0;
           return ListView.separated(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.all(16),
-            itemCount: entries.length + 1,
+            itemCount: entries.length + headerCount,
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, i) {
-              if (i == 0) {
+              if (_canManage && i == 0) {
                 return Align(
                   alignment: Alignment.centerLeft,
                   child: OutlinedButton.icon(
@@ -229,9 +242,11 @@ class _BuildTabState extends State<BuildTab> {
                   ),
                 );
               }
-              final entry = entries[i - 1];
+              final entry = entries[i - headerCount];
               return _BuildEntryCard(
                 entry: entry,
+                canManage: _canManage,
+                onEdit: () => _openEditor(entry: entry),
                 onDelete: () => _confirmDelete(entry),
               );
             },
@@ -242,11 +257,18 @@ class _BuildTabState extends State<BuildTab> {
   }
 }
 
-/// One card in the build timeline: date, title, optional body, delete action.
+/// One card in the build timeline: date, title, optional body, edit + delete.
 class _BuildEntryCard extends StatelessWidget {
-  const _BuildEntryCard({required this.entry, required this.onDelete});
+  const _BuildEntryCard({
+    required this.entry,
+    required this.canManage,
+    required this.onEdit,
+    required this.onDelete,
+  });
 
   final BuildEntry entry;
+  final bool canManage;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   @override
@@ -302,12 +324,22 @@ class _BuildEntryCard extends StatelessWidget {
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline),
-                color: AppColors.steel,
-                tooltip: 'Delete update',
-              ),
+              if (canManage) ...[
+                IconButton(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined),
+                  color: AppColors.steel,
+                  tooltip: 'Edit update',
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline),
+                  color: AppColors.steel,
+                  tooltip: 'Delete update',
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
             ],
           ),
           if (entry.hasMedia) ...[
@@ -407,11 +439,13 @@ class _CategoryChip extends StatelessWidget {
   }
 }
 
-/// Bottom sheet to add a build-log update. Pops `true` after a successful save.
+/// Bottom sheet to add or edit a build-log update. Pops `true` after a
+/// successful save. Pass [entry] to edit an existing update.
 class _BuildEntrySheet extends StatefulWidget {
-  const _BuildEntrySheet({required this.carId});
+  const _BuildEntrySheet({required this.carId, this.entry});
 
   final String carId;
+  final BuildEntry? entry;
 
   @override
   State<_BuildEntrySheet> createState() => _BuildEntrySheetState();
@@ -426,9 +460,27 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
   String? _category;
   bool _saving = false;
 
+  bool get _isEditing => widget.entry != null;
+
   // Media chosen but not yet uploaded (held as bytes for preview + upload).
   static const _videoExts = {'mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v'};
   final List<({String name, Uint8List bytes, bool isVideo})> _media = [];
+
+  // When editing: existing media still attached, and the ids the user removed.
+  final List<PostMedia> _existing = [];
+  final Set<String> _removedMediaIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.entry;
+    if (e != null) {
+      _title.text = e.title;
+      _body.text = e.body ?? '';
+      _category = e.category;
+      _existing.addAll(e.media);
+    }
+  }
 
   @override
   void dispose() {
@@ -450,25 +502,43 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
     setState(() => _media.addAll(added));
   }
 
-  Future<void> _save({required bool silent}) async {
+  Future<void> _save({bool silent = false}) async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
 
     final client = Supabase.instance.client;
     final body = _body.text.trim();
-    final payload = {
-      'car_id': widget.carId,
-      'title': _title.text.trim(),
-      'body': body.isEmpty ? null : body,
-      'category': _category, // optional mod tag; null for a general update
-      'silent': silent, // silent updates stay off followers' feeds
-      // created_at uses the table's DB default.
-    };
+    final title = _title.text.trim();
 
     try {
-      // .select() so the future completes (esp. on web) and returns the row id.
-      final inserted = await client.from('build_entries').insert(payload).select();
-      final entryId = inserted.first['id'] as String;
+      final String entryId;
+      final int mediaStart; // position offset for any newly-added media
+      if (_isEditing) {
+        // Update text fields in place; leave the silent/created_at values as-is.
+        entryId = widget.entry!.id;
+        mediaStart = widget.entry!.media.length;
+        await client.from('build_entries').update({
+          'title': title,
+          'body': body.isEmpty ? null : body,
+          'category': _category,
+        }).eq('id', entryId);
+        // Drop any existing media the user removed.
+        if (_removedMediaIds.isNotEmpty) {
+          await client.from('post_media').delete().inFilter('id', _removedMediaIds.toList());
+        }
+      } else {
+        // .select() so the future completes (esp. on web) and returns the row id.
+        final inserted = await client.from('build_entries').insert({
+          'car_id': widget.carId,
+          'title': title,
+          'body': body.isEmpty ? null : body,
+          'category': _category, // optional mod tag; null for a general update
+          'silent': silent, // silent updates stay off followers' feeds
+          // created_at uses the table's DB default.
+        }).select();
+        entryId = inserted.first['id'] as String;
+        mediaStart = 0;
+      }
 
       if (_media.isNotEmpty) {
         final uid = client.auth.currentUser!.id;
@@ -490,7 +560,8 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                   'gif' => 'image/gif',
                   _ => 'image/jpeg',
                 };
-          final path = '$uid/${entryId}_$i.$ext';
+          final pos = mediaStart + i; // append after any existing media
+          final path = '$uid/${entryId}_$pos.$ext';
           await client.storage.from('car-photos').uploadBinary(
                 path,
                 m.bytes,
@@ -501,7 +572,7 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
             'car_id': widget.carId,
             'url': client.storage.from('car-photos').getPublicUrl(path),
             'kind': m.isVideo ? 'video' : 'image',
-            'position': i,
+            'position': pos,
           });
         }
         await client.from('post_media').insert(mediaRows);
@@ -549,7 +620,7 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Add update',
+                  _isEditing ? 'Edit update' : 'Add update',
                   style: GoogleFonts.archivo(
                     fontWeight: FontWeight.w700,
                     fontSize: 20,
@@ -597,13 +668,42 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                     hintText: 'What changed, parts used, next steps…',
                   ),
                 ),
+                if (_existing.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Current media',
+                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 84,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _existing.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
+                      itemBuilder: (_, i) {
+                        final m = _existing[i];
+                        return _ExistingThumb(
+                          media: m,
+                          onRemove: _saving
+                              ? null
+                              : () => setState(() {
+                                    _removedMediaIds.add(m.id);
+                                    _existing.remove(m);
+                                  }),
+                        );
+                      },
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: OutlinedButton.icon(
                     onPressed: _saving ? null : _addMedia,
                     icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
-                    label: Text(_media.isEmpty ? 'Add photos / video' : 'Add more'),
+                    label: Text(_media.isEmpty && _existing.isEmpty ? 'Add photos / video' : 'Add more'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.ember,
                       side: const BorderSide(color: AppColors.hairline),
@@ -631,6 +731,12 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                 const SizedBox(height: 24),
                 if (_saving)
                   const Center(child: CircularProgressIndicator(color: AppColors.ember))
+                else if (_isEditing)
+                  FilledButton(
+                    onPressed: () => _save(),
+                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    child: const Text('Save changes'),
+                  )
                 else
                   Row(
                     children: [
@@ -660,7 +766,9 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                   ),
                 const SizedBox(height: 6),
                 Text(
-                  'Silent updates save to the build log but stay off your followers’ feeds.',
+                  _isEditing
+                      ? 'Existing photos and videos are kept; anything you add here is appended.'
+                      : 'Silent updates save to the build log but stay off your followers’ feeds.',
                   style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, height: 1.4),
                 ),
                 const SizedBox(height: 8),
@@ -699,6 +807,68 @@ class _MediaThumb extends StatelessWidget {
               : Image.memory(bytes, width: 84, height: 84, fit: BoxFit.cover),
         ),
         if (isVideo)
+          const Positioned(
+            left: 6,
+            bottom: 6,
+            child: Icon(Icons.play_circle_fill, color: Colors.white70, size: 20),
+          ),
+        Positioned(
+          top: 4,
+          right: 4,
+          child: GestureDetector(
+            onTap: onRemove,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close, size: 15, color: AppColors.cream),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A square preview of an already-uploaded photo/video (edit mode), with a
+/// remove "x". Removing it marks the media for deletion on save.
+class _ExistingThumb extends StatelessWidget {
+  const _ExistingThumb({required this.media, this.onRemove});
+
+  final PostMedia media;
+  final VoidCallback? onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: media.isVideo
+              ? Container(
+                  width: 84,
+                  height: 84,
+                  color: AppColors.graphiteRaised,
+                  alignment: Alignment.center,
+                  child: const Icon(Icons.videocam, color: AppColors.steel, size: 28),
+                )
+              : Image.network(
+                  media.url,
+                  width: 84,
+                  height: 84,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    width: 84,
+                    height: 84,
+                    color: AppColors.graphiteRaised,
+                    alignment: Alignment.center,
+                    child: const Icon(Icons.broken_image_outlined, color: AppColors.steel, size: 24),
+                  ),
+                ),
+        ),
+        if (media.isVideo)
           const Positioned(
             left: 6,
             bottom: 6,
