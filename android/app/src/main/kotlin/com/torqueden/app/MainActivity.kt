@@ -1,4 +1,4 @@
-package com.aquamain.torqueden
+package com.torqueden.app
 
 import io.flutter.embedding.android.FlutterFragmentActivity
 
