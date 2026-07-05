@@ -60,15 +60,14 @@ class MembershipScreen extends StatelessWidget {
             const SizedBox(height: 14),
             _TierCard(
               name: 'Partner',
-              tagline: 'Marketplace access',
-              price: 'Pricing TBD',
+              tagline: 'Business promotion',
+              price: 'Coming soon',
+              comingSoon: true,
               features: const [
                 'Everything in Premium',
-                'Access the TorqueDen marketplace',
-                'Sell as a brand, supplier or individual',
+                'Add your business website & profile',
+                'Sell your products into the userbase',
               ],
-              ctaLabel: 'Get in touch',
-              onTap: () => _comingSoon(context, 'Partner'),
             ),
             const SizedBox(height: 20),
             Text(
@@ -91,6 +90,7 @@ class _TierCard extends StatelessWidget {
     required this.features,
     this.current = false,
     this.highlight = false,
+    this.comingSoon = false,
     this.ctaLabel,
     this.onTap,
   });
@@ -101,6 +101,7 @@ class _TierCard extends StatelessWidget {
   final List<String> features;
   final bool current;
   final bool highlight;
+  final bool comingSoon;
   final String? ctaLabel;
   final VoidCallback? onTap;
 
@@ -134,6 +135,7 @@ class _TierCard extends StatelessWidget {
                 ),
               ),
               if (current) const _Badge(label: 'Current plan', filled: false)
+              else if (comingSoon) const _Badge(label: 'Coming soon', filled: false)
               else if (highlight) const _Badge(label: 'Recommended', filled: true),
             ],
           ),
@@ -170,6 +172,20 @@ class _TierCard extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(vertical: 13),
                 ),
                 child: Text('Your current plan',
+                    style: GoogleFonts.inter(color: AppColors.steel, fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ] else if (comingSoon) ...[
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: null,
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: AppColors.hairline),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                ),
+                child: Text('Coming soon',
                     style: GoogleFonts.inter(color: AppColors.steel, fontWeight: FontWeight.w600)),
               ),
             ),

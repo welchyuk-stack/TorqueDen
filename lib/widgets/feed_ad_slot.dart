@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:torqueden/ads/ad_ids.dart';
+import 'package:torqueden/ads/consent_service.dart';
 import 'package:torqueden/theme.dart';
 
 /// A single AdMob medium-rectangle (300×250) ad woven into the feed, wrapped in
@@ -21,6 +22,14 @@ class _FeedAdSlotState extends State<FeedAdSlot> {
   @override
   void initState() {
     super.initState();
+    _loadWhenConsented();
+  }
+
+  /// Wait for the consent flow (UMP + ATT) to resolve, then only request an ad
+  /// if consent permits it. A user who declines in the EEA/UK gets no ad.
+  Future<void> _loadWhenConsented() async {
+    await ConsentService.instance.ensureReady();
+    if (!mounted || !ConsentService.instance.canRequestAds) return;
     _ad = BannerAd(
       adUnitId: AdIds.feedBanner,
       size: AdSize.mediumRectangle, // 300x250

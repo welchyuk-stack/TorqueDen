@@ -1,8 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/ads/consent_service.dart';
 import 'package:torqueden/screens/auth/auth_gate.dart';
 import 'package:torqueden/services/biometric_lock.dart';
 import 'package:torqueden/services/saved_location.dart';
@@ -20,9 +18,6 @@ Future<void> main() async {
   await SavedLocation.load();
   await BiometricLock.load();
 
-  // AdMob for feed house/network ads.
-  unawaited(MobileAds.instance.initialize());
-
   // Connect to Supabase (credentials live in supabase_config.dart).
   // Guarded so the app still runs if the config hasn't been filled in.
   if (SupabaseConfig.isConfigured) {
@@ -35,8 +30,23 @@ Future<void> main() async {
   runApp(const TorqueDenApp());
 }
 
-class TorqueDenApp extends StatelessWidget {
+class TorqueDenApp extends StatefulWidget {
   const TorqueDenApp({super.key});
+
+  @override
+  State<TorqueDenApp> createState() => _TorqueDenAppState();
+}
+
+class _TorqueDenAppState extends State<TorqueDenApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Gather ad consent (UMP form + iOS ATT prompt) and initialise the ads SDK
+    // once the first frame is up. Runs once; ads won't load until it resolves.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ConsentService.instance.ensureReady();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

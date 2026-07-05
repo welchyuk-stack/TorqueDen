@@ -1,14 +1,31 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:torqueden/ads/consent_service.dart';
 import 'package:torqueden/screens/about_screen.dart' show kAppVersion;
 import 'package:torqueden/support_links.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/open_link.dart';
 
 /// Data & policies hub: opens the hosted Privacy Policy, Terms, and Community
-/// Guidelines, plus the in-app open-source license list.
-class DataPoliciesScreen extends StatelessWidget {
+/// Guidelines, plus the in-app open-source license list. For EEA/UK users it
+/// also surfaces an ad-consent ("privacy options") entry point when required.
+class DataPoliciesScreen extends StatefulWidget {
   const DataPoliciesScreen({super.key});
+
+  @override
+  State<DataPoliciesScreen> createState() => _DataPoliciesScreenState();
+}
+
+class _DataPoliciesScreenState extends State<DataPoliciesScreen> {
+  bool _showAdConsent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    ConsentService.instance.isPrivacyOptionsRequired().then((required) {
+      if (mounted && required) setState(() => _showAdConsent = true);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +53,12 @@ class DataPoliciesScreen extends StatelessWidget {
               external: true,
               onTap: () => openLink(context, SupportLinks.communityGuidelinesUrl),
             ),
+            if (_showAdConsent)
+              _Tile(
+                icon: Icons.ads_click_outlined,
+                label: 'Ad privacy choices',
+                onTap: () => ConsentService.instance.showPrivacyOptionsForm(),
+              ),
             _Tile(
               icon: Icons.article_outlined,
               label: 'Open-source licenses',
