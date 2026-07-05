@@ -6,10 +6,10 @@ import 'package:torqueden/services/video_trim_service.dart';
 import 'package:torqueden/theme.dart';
 import 'package:video_player/video_player.dart';
 
-/// Trim a video clip before it's attached. Pops the (trimmed) file path to use,
-/// or the original path if the user keeps the full clip / an export fails.
-/// Trimming runs natively via easy_video_editor (AVFoundation on iOS — no
-/// ffmpeg). Phase 1 of video editing; text overlay + filters come later.
+/// The clip editor: trim + colour filters, applied in a single native
+/// re-encode (AVFoundation — no ffmpeg). Pops the edited file path to use, or
+/// the original path if nothing changed / an export fails. Text overlay is the
+/// remaining editing phase.
 class VideoTrimScreen extends StatefulWidget {
   const VideoTrimScreen({super.key, required this.inputPath});
 
@@ -24,9 +24,12 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
   double _startMs = 0;
   double _endMs = 0;
   double _totalMs = 0;
+  String? _filterId; // null = no filter
   bool _exporting = false;
 
   static const _minClipMs = 500.0; // don't allow a trim shorter than 0.5s
+
+  _VideoFilter get _filter => _filters.firstWhere((f) => f.id == _filterId);
 
   @override
   void initState() {
@@ -68,7 +71,6 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     if (c.value.isPlaying) {
       await c.pause();
     } else {
-      // Restart from the trim start if we're outside the window.
       final posMs = c.value.position.inMilliseconds.toDouble();
       if (posMs < _startMs || posMs >= _endMs) {
         await c.seekTo(Duration(milliseconds: _startMs.toInt()));
@@ -78,12 +80,11 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     if (mounted) setState(() {});
   }
 
-  Future<void> _useFull() => _finish(widget.inputPath);
-
-  Future<void> _useTrimmed() async {
-    // No meaningful trim? Just keep the original.
-    if (_startMs <= 0 && _endMs >= _totalMs) {
-      await _finish(widget.inputPath);
+  Future<void> _done() async {
+    final trimmed = _startMs > 0 || _endMs < _totalMs;
+    final filtered = _filterId != null;
+    if (!trimmed && !filtered) {
+      await _finish(widget.inputPath); // nothing changed
       return;
     }
     setState(() => _exporting = true);
@@ -92,13 +93,14 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
         widget.inputPath,
         Duration(milliseconds: _startMs.toInt()),
         Duration(milliseconds: _endMs.toInt()),
+        filter: _filterId,
       );
       await _finish(out ?? widget.inputPath);
     } catch (_) {
       if (!mounted) return;
       setState(() => _exporting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not trim the clip — using the full video.')),
+        const SnackBar(content: Text('Couldn\'t process the clip — using the original.')),
       );
       await _finish(widget.inputPath);
     }
@@ -121,12 +123,13 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     final c = _controller;
     final ready = c != null && c.value.isInitialized && _totalMs > 0;
     final selMs = (_endMs - _startMs).clamp(0, _totalMs);
+    final cf = _filter.colorFilter;
 
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
-        title: const Text('Trim'),
+        title: const Text('Edit clip'),
         leading: IconButton(
           icon: const Icon(Icons.close),
           onPressed: _exporting ? null : () => _finish(widget.inputPath),
@@ -146,7 +149,9 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                           child: Stack(
                             alignment: Alignment.center,
                             children: [
-                              VideoPlayer(c),
+                              cf == null
+                                  ? VideoPlayer(c)
+                                  : ColorFiltered(colorFilter: cf, child: VideoPlayer(c)),
                               if (!c.value.isPlaying)
                                 const DecoratedBox(
                                   decoration: BoxDecoration(color: Colors.black26),
@@ -158,6 +163,41 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                           ),
                         ),
                       ),
+                    ),
+                  ),
+                  // Filter strip.
+                  SizedBox(
+                    height: 44,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: _filters.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 8),
+                      itemBuilder: (_, i) {
+                        final f = _filters[i];
+                        final selected = f.id == _filterId;
+                        return GestureDetector(
+                          onTap: _exporting ? null : () => setState(() => _filterId = f.id),
+                          child: Container(
+                            alignment: Alignment.center,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            decoration: BoxDecoration(
+                              color: selected ? AppColors.ember : AppColors.graphiteRaised,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                  color: selected ? AppColors.ember : AppColors.hairline),
+                            ),
+                            child: Text(
+                              f.label,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: selected ? AppColors.onEmber : AppColors.steel,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
                   Padding(
@@ -193,7 +233,6 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                                         ? (v.start + _minClipMs).clamp(0, _totalMs)
                                         : v.end;
                                   });
-                                  // Preview the start frame while scrubbing.
                                   c.seekTo(Duration(milliseconds: _startMs.toInt()));
                                 },
                         ),
@@ -201,31 +240,12 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                         if (_exporting)
                           const Center(child: CircularProgressIndicator(color: AppColors.ember))
                         else
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton(
-                                  onPressed: _useFull,
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: AppColors.steel,
-                                    side: const BorderSide(color: AppColors.hairline),
-                                    padding: const EdgeInsets.symmetric(vertical: 13),
-                                  ),
-                                  child: const Text('Full clip'),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                flex: 2,
-                                child: FilledButton.icon(
-                                  onPressed: _useTrimmed,
-                                  icon: const Icon(Icons.content_cut, size: 18),
-                                  label: const Text('Use trim'),
-                                  style: FilledButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(vertical: 13)),
-                                ),
-                              ),
-                            ],
+                          FilledButton.icon(
+                            onPressed: _done,
+                            icon: const Icon(Icons.check, size: 18),
+                            label: const Text('Done'),
+                            style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(48)),
                           ),
                       ],
                     ),
@@ -236,3 +256,45 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     );
   }
 }
+
+/// A colour filter preset: [id] is sent to the native exporter (null = none);
+/// [colorFilter] is the live-preview approximation over the player.
+class _VideoFilter {
+  const _VideoFilter({required this.id, required this.label, required this.colorFilter});
+  final String? id;
+  final String label;
+  final ColorFilter? colorFilter;
+}
+
+final _filters = <_VideoFilter>[
+  const _VideoFilter(id: null, label: 'None', colorFilter: null),
+  const _VideoFilter(id: 'mono', label: 'Mono', colorFilter: ColorFilter.matrix(_kGreyscale)),
+  const _VideoFilter(id: 'vivid', label: 'Vivid', colorFilter: ColorFilter.matrix(_kVivid)),
+  const _VideoFilter(id: 'warm', label: 'Warm', colorFilter: ColorFilter.matrix(_kWarm)),
+  const _VideoFilter(id: 'cool', label: 'Cool', colorFilter: ColorFilter.matrix(_kCool)),
+];
+
+const _kGreyscale = <double>[
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0, 0, 0, 1, 0,
+];
+const _kVivid = <double>[
+  1.3937, -0.3576, -0.0361, 0, 0, //
+  -0.1063, 1.1424, -0.0361, 0, 0, //
+  -0.1063, -0.3576, 1.4639, 0, 0, //
+  0, 0, 0, 1, 0,
+];
+const _kWarm = <double>[
+  1.15, 0, 0, 0, 0, //
+  0, 1.0, 0, 0, 0, //
+  0, 0, 0.85, 0, 0, //
+  0, 0, 0, 1, 0,
+];
+const _kCool = <double>[
+  0.85, 0, 0, 0, 0, //
+  0, 1.0, 0, 0, 0, //
+  0, 0, 1.2, 0, 0, //
+  0, 0, 0, 1, 0,
+];

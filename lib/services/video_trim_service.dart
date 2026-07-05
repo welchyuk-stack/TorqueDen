@@ -8,12 +8,20 @@ class VideoTrimService {
 
   static const _channel = MethodChannel('torqueden/video');
 
-  static Future<String?> trim(String path, Duration start, Duration end) async {
+  /// Trims to [start]..[end] and, if [filter] is set (a filter id like 'mono'),
+  /// bakes in that colour filter — in a single native re-encode.
+  static Future<String?> trim(
+    String path,
+    Duration start,
+    Duration end, {
+    String? filter,
+  }) async {
     try {
       return await _channel.invokeMethod<String>('trim', {
         'path': path,
         'startMs': start.inMilliseconds,
         'endMs': end.inMilliseconds,
+        'filter': ?filter,
       });
     } catch (_) {
       return null;
