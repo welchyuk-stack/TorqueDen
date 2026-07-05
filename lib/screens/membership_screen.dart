@@ -1,85 +1,240 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
+import 'package:torqueden/iap/iap_service.dart';
+import 'package:torqueden/services/entitlements.dart';
+import 'package:torqueden/support_links.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/open_link.dart';
 
-/// Membership tiers. Users upgrade here via in-app purchase.
+/// Membership tiers. Premium is sold via RevenueCat (auto-renewable
+/// subscription); Partner is held as "coming soon" while the userbase builds.
 ///
-/// Purchases aren't wired yet (no StoreKit/IAP layer) and the user's tier isn't
-/// tracked server-side, so this is currently a presentation of the tiers:
-/// Free is shown as the current plan and the upgrade CTAs flag that purchasing
-/// is coming soon. Pricing is TBD.
-class MembershipScreen extends StatelessWidget {
+/// If IAP isn't wired yet (no RevenueCat key / no offerings), the Premium card
+/// falls back to a "coming soon" presentation so the screen still works.
+class MembershipScreen extends StatefulWidget {
   const MembershipScreen({super.key});
 
-  void _comingSoon(BuildContext context, String tier) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$tier — in-app purchases are coming soon.')),
-    );
+  @override
+  State<MembershipScreen> createState() => _MembershipScreenState();
+}
+
+class _MembershipScreenState extends State<MembershipScreen> {
+  Offering? _offering;
+  bool _loading = true;
+  bool _busy = false; // a purchase/restore is in flight
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
   }
+
+  Future<void> _load() async {
+    await Entitlements.refresh();
+    final offering = await IapService.instance.premiumOffering();
+    if (!mounted) return;
+    setState(() {
+      _offering = offering;
+      _loading = false;
+    });
+  }
+
+  /// Premium packages to show, annual first (best value), then monthly.
+  List<Package> get _premiumPackages {
+    final o = _offering;
+    if (o == null) return const [];
+    final preferred = <Package?>[o.annual, o.monthly].whereType<Package>().toList();
+    return preferred.isEmpty ? o.availablePackages : preferred;
+  }
+
+  bool get _iapReady => IapService.instance.isAvailable && _premiumPackages.isNotEmpty;
+
+  Future<void> _buy(Package pkg) async {
+    setState(() => _busy = true);
+    try {
+      final ok = await IapService.instance.purchase(pkg);
+      if (!mounted) return;
+      if (ok) {
+        await Entitlements.refresh(); // pick up the server tier if it landed
+        if (!mounted) return;
+        _snack('Welcome to Premium! 🎉');
+      }
+    } catch (_) {
+      if (mounted) _snack('Purchase couldn\'t be completed. Please try again.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _restore() async {
+    setState(() => _busy = true);
+    try {
+      final ok = await IapService.instance.restore();
+      if (ok) await Entitlements.refresh();
+      if (!mounted) return;
+      _snack(ok ? 'Purchases restored.' : 'No purchases to restore.');
+    } catch (_) {
+      if (mounted) _snack('Couldn\'t restore purchases.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _comingSoon(String tier) => _snack('$tier — coming soon.');
+
+  void _snack(String msg) => ScaffoldMessenger.of(context)
+      .showSnackBar(SnackBar(content: Text(msg)));
+
+  String _packageLabel(Package p) => switch (p.packageType) {
+        PackageType.annual => 'Annual',
+        PackageType.monthly => 'Monthly',
+        PackageType.weekly => 'Weekly',
+        PackageType.sixMonth => '6 months',
+        PackageType.threeMonth => '3 months',
+        PackageType.twoMonth => '2 months',
+        PackageType.lifetime => 'Lifetime',
+        _ => p.storeProduct.title,
+      };
 
   @override
   Widget build(BuildContext context) {
+    final isPremium = Entitlements.isPremium; // premium or partner
     return Scaffold(
       appBar: AppBar(title: const Text('Membership')),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            Text(
-              'Choose how you ride with TorqueDen. Pricing is being finalised — '
-              'upgrades will land soon.',
-              style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 14, height: 1.45),
-            ),
-            const SizedBox(height: 20),
-            _TierCard(
-              name: 'Free',
-              tagline: 'With ads',
-              price: 'Free',
-              current: true,
-              features: const [
-                'One car in your garage',
-                'Join any club + create one public club',
-                'Full feed & clubs access',
-              ],
-              onTap: null,
-            ),
-            const SizedBox(height: 14),
-            _TierCard(
-              name: 'Premium',
-              tagline: 'No ads',
-              price: 'Pricing TBD',
-              highlight: true,
-              features: const [
-                'No ads in your feed',
-                'Unlimited cars in your garage',
-                'Unlimited clubs — including private',
-              ],
-              ctaLabel: 'Upgrade',
-              onTap: () => _comingSoon(context, 'Premium'),
-            ),
-            const SizedBox(height: 14),
-            _TierCard(
-              name: 'Partner',
-              tagline: 'Business promotion',
-              price: 'Coming soon',
-              comingSoon: true,
-              features: const [
-                'Everything in Premium',
-                'Add your business website & profile',
-                'Sell your products into the userbase',
-              ],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Payments are handled securely through the App Store. You can manage '
-              'or cancel a subscription anytime in your device settings.',
-              style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12, height: 1.45),
-            ),
-          ],
-        ),
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                children: [
+                  Text(
+                    'Choose how you ride with TorqueDen.',
+                    style: GoogleFonts.inter(
+                        color: AppColors.textSecondary, fontSize: 14, height: 1.45),
+                  ),
+                  const SizedBox(height: 20),
+                  _TierCard(
+                    name: 'Free',
+                    tagline: 'With ads',
+                    price: 'Free',
+                    current: !isPremium,
+                    features: const [
+                      'One car in your garage',
+                      'Join any club + create one public club',
+                      'Full feed & clubs access',
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _buildPremiumCard(isPremium),
+                  const SizedBox(height: 14),
+                  _TierCard(
+                    name: 'Partner',
+                    tagline: 'Business promotion',
+                    price: 'Coming soon',
+                    comingSoon: true,
+                    features: const [
+                      'Everything in Premium',
+                      'Add your business website & profile',
+                      'Sell your products into the userbase',
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  if (_iapReady && !isPremium)
+                    Center(
+                      child: TextButton(
+                        onPressed: _busy ? null : _restore,
+                        child: Text('Restore purchases',
+                            style: GoogleFonts.inter(color: AppColors.steel, fontWeight: FontWeight.w600)),
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  _legalFooter(),
+                ],
+              ),
       ),
     );
   }
+
+  Widget _buildPremiumCard(bool isPremium) {
+    final packages = _premiumPackages;
+    // Headline price = cheapest available package's price string, if any.
+    final price = _iapReady ? _premiumHeadlinePrice(packages) : 'Pricing TBD';
+    return _TierCard(
+      name: 'Premium',
+      tagline: 'No ads',
+      price: price,
+      highlight: true,
+      current: isPremium,
+      features: const [
+        'No ads in your feed',
+        'Unlimited cars in your garage',
+        'Unlimited clubs — including private',
+      ],
+      // When IAP is live show a buy button per package; otherwise a single
+      // "coming soon" CTA (handled by _TierCard's ctaLabel).
+      purchaseButtons: (_iapReady && !isPremium)
+          ? [
+              for (final p in packages)
+                _PurchaseButton(
+                  label: '${_packageLabel(p)} · ${p.storeProduct.priceString}',
+                  onPressed: _busy ? null : () => _buy(p),
+                ),
+            ]
+          : null,
+      ctaLabel: (!_iapReady && !isPremium) ? 'Upgrade' : null,
+      onTap: (!_iapReady && !isPremium) ? () => _comingSoon('Premium') : null,
+      busy: _busy,
+    );
+  }
+
+  String _premiumHeadlinePrice(List<Package> packages) {
+    if (packages.isEmpty) return 'Pricing TBD';
+    // Show the annual if present (headline value), else the first package.
+    final annual = packages.firstWhere(
+      (p) => p.packageType == PackageType.annual,
+      orElse: () => packages.first,
+    );
+    return annual.storeProduct.priceString;
+  }
+
+  Widget _legalFooter() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Payments are handled securely through the App Store. Subscriptions '
+          'renew automatically until cancelled; manage or cancel anytime in your '
+          'device settings.',
+          style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12, height: 1.45),
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _footerLink('Terms of Service', SupportLinks.termsUrl),
+            Text('·', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12)),
+            _footerLink('Privacy Policy', SupportLinks.privacyPolicyUrl),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _footerLink(String label, String url) => GestureDetector(
+        onTap: () => openLink(context, url),
+        child: Text(label,
+            style: GoogleFonts.inter(
+                color: AppColors.ember, fontSize: 12, fontWeight: FontWeight.w600)),
+      );
+}
+
+/// A single purchase option (label + price) rendered as a full-width button.
+class _PurchaseButton {
+  const _PurchaseButton({required this.label, required this.onPressed});
+  final String label;
+  final VoidCallback? onPressed;
 }
 
 class _TierCard extends StatelessWidget {
@@ -93,6 +248,8 @@ class _TierCard extends StatelessWidget {
     this.comingSoon = false,
     this.ctaLabel,
     this.onTap,
+    this.purchaseButtons,
+    this.busy = false,
   });
 
   final String name;
@@ -104,6 +261,8 @@ class _TierCard extends StatelessWidget {
   final bool comingSoon;
   final String? ctaLabel;
   final VoidCallback? onTap;
+  final List<_PurchaseButton>? purchaseButtons;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -189,6 +348,23 @@ class _TierCard extends StatelessWidget {
                     style: GoogleFonts.inter(color: AppColors.steel, fontWeight: FontWeight.w600)),
               ),
             ),
+          ] else if (purchaseButtons != null && purchaseButtons!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            for (final b in purchaseButtons!)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: b.onPressed,
+                    style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 13)),
+                    child: busy
+                        ? const SizedBox(
+                            height: 18, width: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text(b.label),
+                  ),
+                ),
+              ),
           ] else if (ctaLabel != null) ...[
             const SizedBox(height: 6),
             SizedBox(

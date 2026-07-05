@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/ads/consent_service.dart';
+import 'package:torqueden/iap/iap_service.dart';
 import 'package:torqueden/screens/auth/auth_gate.dart';
 import 'package:torqueden/services/biometric_lock.dart';
 import 'package:torqueden/services/saved_location.dart';
@@ -26,6 +27,9 @@ Future<void> main() async {
       publishableKey: SupabaseConfig.publishableKey,
     );
   }
+
+  // Configure RevenueCat for in-app purchases (no-op until a real key is set).
+  await IapService.instance.configure();
 
   runApp(const TorqueDenApp());
 }

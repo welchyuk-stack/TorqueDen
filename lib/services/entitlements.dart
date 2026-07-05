@@ -40,6 +40,13 @@ class Entitlements {
   /// enforces it server-side.)
   static bool get canManagePartnerPage => isPartner;
 
+  /// Optimistically reflect a freshly purchased/restored tier in the cache for
+  /// immediate UI, before the RevenueCat webhook has written it to
+  /// `user_entitlements`. This is client-side only and never trusted for
+  /// server-side gating (RLS enforces the real tier); [refresh] re-reads the
+  /// authoritative value from Supabase on the next call / launch.
+  static void applyPurchasedTier(Tier t) => _tier = t;
+
   static Future<void> refresh() async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) { _tier = Tier.free; return; }

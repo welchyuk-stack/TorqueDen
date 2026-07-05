@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/iap/iap_service.dart';
 import 'package:torqueden/main_shell.dart';
 import 'package:torqueden/screens/auth/auth_screen.dart';
 import 'package:torqueden/screens/auth/set_new_password_screen.dart';
@@ -30,6 +31,14 @@ class _AuthGateState extends State<AuthGate> {
     super.initState();
     _sub = _auth.onAuthStateChange.listen((state) {
       if (state.event == AuthChangeEvent.passwordRecovery) _recovering = true;
+      // Keep RevenueCat's app-user in step with the Supabase session so the
+      // purchase webhook maps to the right user_entitlements row.
+      final uid = state.session?.user.id;
+      if (state.event == AuthChangeEvent.signedIn && uid != null) {
+        IapService.instance.identify(uid);
+      } else if (state.event == AuthChangeEvent.signedOut) {
+        IapService.instance.signOut();
+      }
       if (mounted) setState(() {});
     });
   }
