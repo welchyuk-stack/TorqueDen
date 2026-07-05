@@ -159,6 +159,42 @@ class _AccountScreenState extends State<AccountScreen> {
     }
   }
 
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Delete your account?',
+            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: Text(
+          'This permanently deletes your account and everything tied to it — your '
+          'cars and build logs, posts, clubs you own, and comments. This can\'t be '
+          'undone.',
+          style: GoogleFonts.inter(color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete account',
+                style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await _client.rpc('delete_own_account');
+      await _client.auth.signOut();
+      // AuthGate swaps back to the login screen automatically.
+    } catch (e) {
+      _snack('Could not delete your account: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -242,6 +278,21 @@ class _AccountScreenState extends State<AccountScreen> {
                   subtitle: '••••••••',
                   actionLabel: 'Change',
                   onTap: _changePassword,
+                ),
+                const SizedBox(height: 28),
+                Text('DANGER ZONE',
+                    style: GoogleFonts.inter(
+                        color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: _deleteAccount,
+                  icon: const Icon(Icons.delete_forever_outlined, size: 20),
+                  label: const Text('Delete account'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: BorderSide(color: AppColors.danger.withValues(alpha: 0.5)),
+                    minimumSize: const Size.fromHeight(48),
+                  ),
                 ),
               ],
             );

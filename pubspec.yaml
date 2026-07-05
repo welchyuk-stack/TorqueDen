@@ -45,6 +45,7 @@ dependencies:
   visibility_detector: ^0.4.0+2
   url_launcher: ^6.3.2
   shared_preferences: ^2.5.5
+  local_auth: ^3.0.1
 
 dev_dependencies:
   flutter_test:

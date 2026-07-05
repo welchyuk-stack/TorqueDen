@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/policies/policy_documents.dart';
+import 'package:torqueden/screens/data_policies_screen.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/wordmark.dart';
+
+/// Deep-link the password-reset email points back to. Must be added to
+/// Supabase → Authentication → URL Configuration → Redirect URLs, and matches
+/// the URL scheme registered in iOS Info.plist / Android manifest.
+const String kResetRedirect = 'io.torqueden://reset-callback';
 
 /// Combined log-in / sign-up screen. Toggling between the two modes (instead of
 /// pushing separate routes) keeps things simple: when auth succeeds, the
@@ -62,6 +69,30 @@ class _AuthScreenState extends State<AuthScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _forgotPassword() async {
+    final email = _email.text.trim();
+    if (!email.contains('@') || !email.contains('.')) {
+      _showMessage('Enter your email above, then tap "Forgot password".');
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      await Supabase.instance.client.auth
+          .resetPasswordForEmail(email, redirectTo: kResetRedirect);
+      if (mounted) _showMessage('Password reset link sent to $email. Check your inbox.');
+    } on AuthException catch (e) {
+      if (mounted) _showMessage(e.message);
+    } catch (_) {
+      if (mounted) _showMessage('Could not send the reset email. Please try again.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _openDoc(PolicyDoc doc) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => PolicyScreen(doc: doc)));
   }
 
   void _showMessage(String text) {
@@ -144,7 +175,17 @@ class _AuthScreenState extends State<AuthScreen> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 24),
+                    if (_isLogin)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _loading ? null : _forgotPassword,
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 4)),
+                          child: Text('Forgot password?',
+                              style: GoogleFonts.inter(color: AppColors.steel, fontSize: 13)),
+                        ),
+                      ),
+                    SizedBox(height: _isLogin ? 8 : 24),
                     FilledButton(
                       onPressed: _loading ? null : _submit,
                       child: _loading
@@ -158,6 +199,10 @@ class _AuthScreenState extends State<AuthScreen> {
                             )
                           : Text(_isLogin ? 'Log in' : 'Create account'),
                     ),
+                    if (!_isLogin) ...[
+                      const SizedBox(height: 14),
+                      _ConsentLine(onTerms: () => _openDoc(kTermsOfService), onPrivacy: () => _openDoc(kPrivacyPolicy)),
+                    ],
                     const SizedBox(height: 16),
                     Center(
                       child: TextButton(
@@ -179,6 +224,31 @@ class _AuthScreenState extends State<AuthScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// "By creating an account you agree to our Terms and Privacy Policy" with the
+/// two documents tappable.
+class _ConsentLine extends StatelessWidget {
+  const _ConsentLine({required this.onTerms, required this.onPrivacy});
+  final VoidCallback onTerms;
+  final VoidCallback onPrivacy;
+
+  @override
+  Widget build(BuildContext context) {
+    final muted = GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12, height: 1.4);
+    final link = GoogleFonts.inter(color: AppColors.ember, fontSize: 12, fontWeight: FontWeight.w600, height: 1.4);
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text('By creating an account you agree to our ', style: muted),
+        GestureDetector(onTap: onTerms, child: Text('Terms', style: link)),
+        Text(' and ', style: muted),
+        GestureDetector(onTap: onPrivacy, child: Text('Privacy Policy', style: link)),
+        Text('.', style: muted),
+      ],
     );
   }
 }

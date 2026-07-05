@@ -4,11 +4,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/screens/about_screen.dart';
 import 'package:torqueden/screens/account_screen.dart';
 import 'package:torqueden/screens/contact_screen.dart';
+import 'package:torqueden/screens/data_policies_screen.dart';
 import 'package:torqueden/screens/donate_screen.dart';
 import 'package:torqueden/screens/invite_screen.dart';
 import 'package:torqueden/screens/location_settings_screen.dart';
 import 'package:torqueden/screens/membership_screen.dart';
 import 'package:torqueden/screens/notifications_screen.dart';
+import 'package:torqueden/services/biometric_lock.dart';
 import 'package:torqueden/services/saved_location.dart';
 import 'package:torqueden/services/units_pref.dart';
 import 'package:torqueden/theme.dart';
@@ -78,6 +80,7 @@ class SettingsScreen extends StatelessWidget {
             const _SectionHeader('Preferences'),
             const _LocationTile(),
             const _DistanceUnitsToggle(),
+            const _BiometricToggle(),
             const _SectionHeader('App'),
             _SettingTile(
               icon: Icons.notifications_none,
@@ -86,7 +89,13 @@ class SettingsScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const NotificationsScreen()),
               ),
             ),
-            const _SettingTile(icon: Icons.policy_outlined, label: 'Data & policies'),
+            _SettingTile(
+              icon: Icons.policy_outlined,
+              label: 'Data & policies',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DataPoliciesScreen()),
+              ),
+            ),
             _SettingTile(
               icon: Icons.info_outline,
               label: 'About TorqueDen',
@@ -126,6 +135,54 @@ class SettingsScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Biometric app-lock switch (Face ID / Touch ID). Hidden on devices without
+/// biometric support. Enabling prompts to confirm first.
+class _BiometricToggle extends StatefulWidget {
+  const _BiometricToggle();
+
+  @override
+  State<_BiometricToggle> createState() => _BiometricToggleState();
+}
+
+class _BiometricToggleState extends State<_BiometricToggle> {
+  bool _on = BiometricLock.enabled;
+  bool _available = false;
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BiometricLock.isAvailable().then((v) {
+      if (mounted) setState(() { _available = v; _checked = true; });
+    });
+  }
+
+  Future<void> _set(bool value) async {
+    final ok = await BiometricLock.setEnabled(value);
+    if (!mounted) return;
+    setState(() => _on = BiometricLock.enabled);
+    if (value && !ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Couldn\'t turn on biometric unlock.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_checked || !_available) return const SizedBox.shrink();
+    return SwitchListTile(
+      value: _on,
+      onChanged: _set,
+      activeThumbColor: AppColors.ember,
+      secondary: const Icon(Icons.face_outlined, color: AppColors.steel),
+      title: Text('Unlock with Face ID', style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15)),
+      subtitle: Text('Require Face ID / Touch ID to open the app',
+          style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
     );
   }
 }
