@@ -10,7 +10,6 @@ import 'package:torqueden/screens/invite_screen.dart';
 import 'package:torqueden/screens/location_settings_screen.dart';
 import 'package:torqueden/screens/membership_screen.dart';
 import 'package:torqueden/screens/notifications_screen.dart';
-import 'package:torqueden/screens/partner/partner_page_manager_screen.dart';
 import 'package:torqueden/services/biometric_lock.dart';
 import 'package:torqueden/services/saved_location.dart';
 import 'package:torqueden/services/units_pref.dart';
@@ -78,13 +77,7 @@ class SettingsScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const MembershipScreen()),
               ),
             ),
-            _SettingTile(
-              icon: Icons.storefront_outlined,
-              label: 'Partner Page',
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const PartnerPageManagerScreen()),
-              ),
-            ),
+            // Partner Page creation is hidden while Partner is "coming soon".
             const _SectionHeader('Preferences'),
             const _LocationTile(),
             const _DistanceUnitsToggle(),
