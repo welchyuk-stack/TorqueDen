@@ -3,12 +3,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
-import 'package:torqueden/models/sponsored_post.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/services/entitlements.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
-import 'package:torqueden/utils/open_link.dart';
+import 'package:torqueden/widgets/feed_ad_slot.dart';
 import 'package:torqueden/widgets/car/build_tab.dart' show LinkedModChip;
 import 'package:torqueden/widgets/comments_sheet.dart';
 import 'package:torqueden/widgets/moderation_sheet.dart';
@@ -91,45 +90,28 @@ class _FeedScreenState extends State<FeedScreen> {
     if (items.isEmpty) return const [];
 
     // Premium/Partner get an ad-free feed (once enforced); everyone else has
-    // house ads woven in.
+    // ad slots woven in (filled by AdMob).
     await Entitlements.refresh();
     if (!Entitlements.adsEnabled) return items;
-    final ads = await _loadAds();
-    if (ads.isEmpty) return items;
-    return _weaveAds(items, ads);
+    return _weaveAdSlots(items);
   }
 
-  /// Active, in-window house ads, highest weight first.
-  Future<List<SponsoredPost>> _loadAds() async {
-    try {
-      final rows = await _client
-          .from('sponsored_posts')
-          .select()
-          .eq('active', true)
-          .order('weight', ascending: false);
-      final now = DateTime.now().toUtc();
-      return rows.map(SponsoredPost.fromMap).where((a) => a.isLiveAt(now)).toList();
-    } catch (_) {
-      return const []; // never let an ad-load failure break the feed
-    }
-  }
-
-  /// One sponsored card after every [_adEveryNPosts] real posts — never first,
-  /// never two in a row, never trailing. Ads cycle if there are fewer than slots.
-  // TODO: restore to 6 after preview — temporarily 2 to show the card sooner.
+  /// One ad slot after every [_adEveryNPosts] real posts — never first, never
+  /// two in a row. Each slot is filled by an AdMob ad (or collapses if unfilled).
+  // TODO: restore to 6 after preview — temporarily 2 to show ads sooner.
   static const int _adEveryNPosts = 2;
-  static List<Object> _weaveAds(List<_FeedItem> posts, List<SponsoredPost> ads) {
+  static List<Object> _weaveAdSlots(List<_FeedItem> posts) {
     final out = <Object>[];
-    var adIdx = 0;
+    var slots = 0;
     for (var i = 0; i < posts.length; i++) {
       out.add(posts[i]);
       if ((i + 1) % _adEveryNPosts == 0) {
-        out.add(ads[adIdx % ads.length]);
-        adIdx++;
+        out.add(const _AdSlot());
+        slots++;
       }
     }
-    // Feed too short to hit a slot — still show one ad so it isn't lost.
-    if (adIdx == 0 && posts.isNotEmpty) out.add(ads.first);
+    // Feed too short to hit a slot — still add one so an ad can show.
+    if (slots == 0 && posts.isNotEmpty) out.add(const _AdSlot());
     return out;
   }
 
@@ -211,7 +193,7 @@ class _FeedScreenState extends State<FeedScreen> {
                 separatorBuilder: (_, _) => const SizedBox(height: 12),
                 itemBuilder: (_, i) {
                   final row = items[i];
-                  if (row is SponsoredPost) return _SponsoredCard(ad: row);
+                  if (row is _AdSlot) return const FeedAdSlot();
                   final item = row as _FeedItem;
                   return _FeedCard(
                     item: item,
@@ -442,128 +424,9 @@ class _FeedCard extends StatelessWidget {
   }
 }
 
-/// A native sponsored post (house ad) in the feed — same card chrome as a real
-/// post, clearly labelled "Sponsored", with a CTA that opens the advertiser link.
-class _SponsoredCard extends StatelessWidget {
-  const _SponsoredCard({required this.ad});
-
-  final SponsoredPost ad;
-
-  @override
-  Widget build(BuildContext context) {
-    final body = ad.body?.trim() ?? '';
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.graphite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.hairline),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              _AdAvatar(ad: ad),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      ad.advertiserName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.archivo(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.cream),
-                    ),
-                    const SizedBox(height: 3),
-                    const _SponsoredPill(),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          if (ad.hasMedia) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: AspectRatio(
-                aspectRatio: 16 / 9,
-                child: Image.network(
-                  ad.mediaUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const ColoredBox(color: AppColors.graphiteRaised),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-          Text(ad.headline,
-              style: GoogleFonts.archivo(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.cream)),
-          if (body.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(body, style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.5)),
-          ],
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () => openLink(context, ad.ctaUrl),
-              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 13)),
-              child: Text(ad.ctaLabel),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Small, calm "Sponsored" label shown where a post's date would be.
-class _SponsoredPill extends StatelessWidget {
-  const _SponsoredPill();
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(
-        color: AppColors.graphiteRaised,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.hairline),
-      ),
-      child: Text('Sponsored',
-          style: GoogleFonts.inter(
-              fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: AppColors.textMuted)),
-    );
-  }
-}
-
-/// 44x44 rounded advertiser avatar with an initial fallback.
-class _AdAvatar extends StatelessWidget {
-  const _AdAvatar({required this.ad});
-  final SponsoredPost ad;
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 44,
-        height: 44,
-        child: ad.hasAvatar
-            ? Image.network(ad.advertiserAvatarUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => _fallback())
-            : _fallback(),
-      ),
-    );
-  }
-
-  Widget _fallback() => Container(
-        color: AppColors.graphiteRaised,
-        alignment: Alignment.center,
-        child: Text(
-          ad.advertiserName.isNotEmpty ? ad.advertiserName[0].toUpperCase() : '#',
-          style: GoogleFonts.archivo(fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.ember),
-        ),
-      );
+/// Marker in the feed list where an AdMob ad should render.
+class _AdSlot {
+  const _AdSlot();
 }
 
 /// 44x44 rounded car thumbnail with a graphiteRaised fallback.

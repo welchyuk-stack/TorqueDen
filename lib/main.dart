@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/screens/auth/auth_gate.dart';
 import 'package:torqueden/services/biometric_lock.dart';
@@ -16,6 +19,9 @@ Future<void> main() async {
   await UnitsPref.load();
   await SavedLocation.load();
   await BiometricLock.load();
+
+  // AdMob for feed house/network ads.
+  unawaited(MobileAds.instance.initialize());
 
   // Connect to Supabase (credentials live in supabase_config.dart).
   // Guarded so the app still runs if the config hasn't been filled in.
