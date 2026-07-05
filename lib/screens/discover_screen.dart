@@ -4,7 +4,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/screens/location_settings_screen.dart';
-import 'package:torqueden/screens/partner/partners_view.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/services/saved_location.dart';
 import 'package:torqueden/services/units_pref.dart';
@@ -29,7 +28,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   late Future<List<Car>> _future;
   late Future<List<String>> _suggestionsFuture;
   String _query = '';
-  int _tab = 0; // 0 = Cars, 1 = Partners
 
   // Location search ("near me") state. The centre comes from the location the
   // user set in Settings (SavedLocation), not a live GPS grab.
@@ -225,21 +223,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           padding: EdgeInsets.only(left: 6),
           child: Text('Discover', style: TextStyle(fontSize: 22)),
         ),
-        actions: [
-          _Segment(
-            label: 'Cars',
-            selected: _tab == 0,
-            onTap: () => setState(() => _tab = 0),
-          ),
-          const SizedBox(width: 6),
-          _Segment(
-            label: 'Partners',
-            selected: _tab == 1,
-            onTap: () => setState(() => _tab = 1),
-          ),
-          const SizedBox(width: 4),
-          const SettingsButton(),
-        ],
+        actions: const [SettingsButton()],
       ),
       body: SafeArea(
         child: Column(
@@ -254,9 +238,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: AppColors.graphiteRaised,
-                  hintText: _tab == 0
-                      ? 'Search cars, builds…'
-                      : 'Search partners…',
+                  hintText: 'Search cars, builds…',
                   prefixIcon: const Icon(Icons.search, color: AppColors.steel),
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14,
@@ -276,13 +258,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 ),
               ),
             ),
-            if (_tab == 0)
-              _SuggestionsBar(
-                future: _suggestionsFuture,
-                onTap: _applySuggestion,
-              ),
-            if (_tab == 0)
-              _LocationBar(
+            _SuggestionsBar(
+              future: _suggestionsFuture,
+              onTap: _applySuggestion,
+            ),
+            _LocationBar(
                 nearMe: _nearMe,
                 centerLabel: _centerLabel,
                 radiusKm: _radiusKm,
@@ -293,9 +273,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 onRadiusChanged: (v) => setState(() => _radiusKm = v),
               ),
             Expanded(
-              child: _tab == 1
-                  ? PartnersView(query: _query)
-                  : FutureBuilder<List<Car>>(
+              child: FutureBuilder<List<Car>>(
                       future: _future,
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
@@ -401,43 +379,6 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                     ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A pill toggle for the Cars / Partners tabs.
-class _Segment extends StatelessWidget {
-  const _Segment({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.cream : AppColors.graphiteRaised,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: selected ? AppColors.cream : AppColors.hairline,
-          ),
-        ),
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: selected ? AppColors.carbon : AppColors.steel,
-          ),
         ),
       ),
     );

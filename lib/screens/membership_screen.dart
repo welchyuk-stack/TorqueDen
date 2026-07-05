@@ -14,16 +14,9 @@ class MembershipScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Membership')),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            Text(
-              'TorqueDen is free while we build the community — everything unlocked, '
-              'supported by ads.',
-              style: GoogleFonts.inter(
-                  color: AppColors.textSecondary, fontSize: 14, height: 1.45),
-            ),
-            const SizedBox(height: 20),
-            const _TierCard(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+          children: const [
+            _TierCard(
               name: 'Free',
               tagline: 'Everything, with ads',
               price: 'Free',
@@ -35,8 +28,8 @@ class MembershipScreen extends StatelessWidget {
                 'Supported by ads',
               ],
             ),
-            const SizedBox(height: 14),
-            const _TierCard(
+            SizedBox(height: 14),
+            _TierCard(
               name: 'Partner',
               tagline: 'Business promotion',
               price: 'Coming soon',
@@ -44,13 +37,7 @@ class MembershipScreen extends StatelessWidget {
               features: [
                 'Add your business website & profile',
                 'Offer your products and services to the userbase',
-                'Get discovered in Discover → Partners',
               ],
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Partner accounts for businesses are coming once the community grows.',
-              style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12, height: 1.45),
             ),
           ],
         ),
