@@ -80,16 +80,11 @@ class _PartnersViewState extends State<PartnersView> {
                 )
               : ListView.separated(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                  // Near-full-width with a small gutter so the grey shows through.
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
                   itemCount: visible.length,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => Align(
-                    alignment: Alignment.topCenter,
-                    child: FractionallySizedBox(
-                      widthFactor: 0.9, // ~10% smaller card
-                      child: _PartnerCard(page: visible[i], onTap: () => _open(visible[i])),
-                    ),
-                  ),
+                  itemBuilder: (_, i) => _PartnerCard(page: visible[i], onTap: () => _open(visible[i])),
                 ),
         );
       },
@@ -118,7 +113,7 @@ class _PartnerCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             AspectRatio(
-              aspectRatio: 16 / 6,
+              aspectRatio: 16 / 5,
               child: page.hasBanner
                   ? Image.network(page.bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => _fallback())
                   : _fallback(),
