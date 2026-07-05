@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/partner_page.dart';
 import 'package:torqueden/screens/add_car_screen.dart' show kCarPhotosBucket;
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/widgets/image_crop_screen.dart';
 
 /// Create or edit the current partner's page. Pops the saved [PartnerPage].
 class EditPartnerPageScreen extends StatefulWidget {
@@ -23,9 +24,10 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
   final _name = TextEditingController();
   final _bio = TextEditingController();
   final _website = TextEditingController();
+  final _address = TextEditingController();
+  final _contactEmail = TextEditingController();
 
-  Uint8List? _bannerBytes;
-  String? _bannerName;
+  Uint8List? _bannerBytes; // freshly cropped banner, if changed
   String? _bannerUrl;
   bool _saving = false;
 
@@ -39,6 +41,8 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
       _name.text = p.businessName;
       _bio.text = p.bio ?? '';
       _website.text = p.websiteUrl ?? '';
+      _address.text = p.address ?? '';
+      _contactEmail.text = p.contactEmail ?? '';
       _bannerUrl = p.bannerUrl;
     }
   }
@@ -48,6 +52,8 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
     _name.dispose();
     _bio.dispose();
     _website.dispose();
+    _address.dispose();
+    _contactEmail.dispose();
     super.dispose();
   }
 
@@ -56,11 +62,14 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
   }
 
   Future<void> _pickBanner() async {
-    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1600, imageQuality: 85);
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 2000, imageQuality: 90);
     if (picked == null) return;
-    final bytes = await picked.readAsBytes();
+    final raw = await picked.readAsBytes();
     if (!mounted) return;
-    setState(() { _bannerBytes = bytes; _bannerName = picked.name; });
+    final cropped = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(builder: (_) => ImageCropScreen(bytes: raw, aspectRatio: 16 / 9, title: 'Frame your banner')),
+    );
+    if (cropped != null && mounted) setState(() => _bannerBytes = cropped);
   }
 
   /// Normalises a typed website into a launchable https URL.
@@ -77,25 +86,30 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
     final uid = _client.auth.currentUser!.id;
     try {
       var bannerUrl = _bannerUrl;
-      if (_bannerBytes != null) {
-        final ext = (_bannerName ?? 'jpg').split('.').last.toLowerCase();
-        // Unique path + no upsert — the car-photos bucket only grants a plain
-        // INSERT, so overwriting (upsert) is rejected by storage RLS.
+      final b = _bannerBytes;
+      if (b != null) {
+        // Detect format from the cropped bytes (unique path, no upsert).
+        final isPng = b.length >= 4 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47;
+        final ext = isPng ? 'png' : 'jpg';
         final path = '$uid/partner_banner_${DateTime.now().millisecondsSinceEpoch}.$ext';
         await _client.storage.from(kCarPhotosBucket).uploadBinary(
               path,
-              _bannerBytes!,
-              fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'),
+              b,
+              fileOptions: FileOptions(contentType: isPng ? 'image/png' : 'image/jpeg'),
             );
         bannerUrl = _client.storage.from(kCarPhotosBucket).getPublicUrl(path);
       }
       final bio = _bio.text.trim();
+      final address = _address.text.trim();
+      final email = _contactEmail.text.trim();
       final rows = await _client.from('partner_pages').upsert({
         'owner_id': uid,
         'business_name': _name.text.trim(),
         'bio': bio.isEmpty ? null : bio,
         'banner_url': ?bannerUrl,
         'website_url': ?_normalisedWebsite(),
+        'address': address.isEmpty ? null : address,
+        'contact_email': email.isEmpty ? null : email,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       }, onConflict: 'owner_id').select();
       if (mounted) Navigator.of(context).pop(PartnerPage.fromMap(rows.first));
@@ -110,6 +124,7 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final hasBanner = _bannerBytes != null || (_bannerUrl?.isNotEmpty ?? false);
     return Scaffold(
       appBar: AppBar(title: Text(_isEditing ? 'Edit Partner Page' : 'Create Partner Page')),
       body: SafeArea(
@@ -124,11 +139,23 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
                   aspectRatio: 16 / 9,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: _bannerBytes != null
-                        ? Image.memory(_bannerBytes!, fit: BoxFit.cover)
-                        : (_bannerUrl?.isNotEmpty ?? false)
-                            ? Image.network(_bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const _BannerHint())
-                            : const _BannerHint(),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (_bannerBytes != null)
+                          Image.memory(_bannerBytes!, fit: BoxFit.cover)
+                        else if (_bannerUrl?.isNotEmpty ?? false)
+                          Image.network(_bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const _BannerHint())
+                        else
+                          const _BannerHint(),
+                        if (hasBanner)
+                          const Positioned(
+                            right: 10,
+                            bottom: 10,
+                            child: _Badge(text: 'Change banner'),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -149,6 +176,32 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
                 decoration: const InputDecoration(
                   labelText: 'Bio',
                   hintText: 'Tell the community who you are and what you do.',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _address,
+                maxLines: 3,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Business address',
+                  hintText: 'Unit / street, town, postcode',
+                  prefixIcon: Icon(Icons.location_on_outlined, color: AppColors.steel),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _contactEmail,
+                keyboardType: TextInputType.emailAddress,
+                validator: (v) {
+                  final s = (v ?? '').trim();
+                  if (s.isEmpty) return null; // optional
+                  return (s.contains('@') && s.contains('.')) ? null : 'Enter a valid email';
+                },
+                decoration: const InputDecoration(
+                  labelText: 'Contact email',
+                  hintText: 'hello@yourshop.co.uk',
+                  prefixIcon: Icon(Icons.mail_outline, color: AppColors.steel),
                 ),
               ),
               const SizedBox(height: 8),
@@ -195,6 +248,22 @@ class _BannerHint extends StatelessWidget {
           Text('Add a banner', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
         ],
       ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.text});
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(text, style: const TextStyle(color: AppColors.cream, fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 }

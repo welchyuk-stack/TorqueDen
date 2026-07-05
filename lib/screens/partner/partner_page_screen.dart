@@ -75,6 +75,18 @@ class _PartnerPageScreenState extends State<PartnerPageScreen> {
                     Text(_page.bio!.trim(),
                         style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.5)),
                   ],
+                  if (_page.hasAddress) ...[
+                    const SizedBox(height: 18),
+                    _InfoRow(icon: Icons.location_on_outlined, text: _page.address!.trim()),
+                  ],
+                  if (_page.hasEmail) ...[
+                    const SizedBox(height: 12),
+                    _InfoRow(
+                      icon: Icons.mail_outline,
+                      text: _page.contactEmail!.trim(),
+                      onTap: () => openLink(context, 'mailto:${_page.contactEmail!.trim()}'),
+                    ),
+                  ],
                   if (_page.hasWebsite) ...[
                     const SizedBox(height: 20),
                     SizedBox(
@@ -94,6 +106,37 @@ class _PartnerPageScreenState extends State<PartnerPageScreen> {
         ),
       ),
     );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.icon, required this.text, this.onTap});
+  final IconData icon;
+  final String text;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final row = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: AppColors.steel),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              height: 1.4,
+              color: onTap != null ? AppColors.ember : AppColors.textSecondary,
+              fontWeight: onTap != null ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
+    );
+    if (onTap == null) return row;
+    return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(8), child: Padding(padding: const EdgeInsets.symmetric(vertical: 2), child: row));
   }
 }
 

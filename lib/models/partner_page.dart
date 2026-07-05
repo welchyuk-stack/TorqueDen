@@ -7,6 +7,8 @@ class PartnerPage {
     this.bio,
     this.bannerUrl,
     this.websiteUrl,
+    this.address,
+    this.contactEmail,
     required this.createdAt,
   });
 
@@ -16,10 +18,14 @@ class PartnerPage {
   final String? bio;
   final String? bannerUrl;
   final String? websiteUrl;
+  final String? address;
+  final String? contactEmail;
   final DateTime createdAt;
 
   bool get hasBanner => bannerUrl != null && bannerUrl!.trim().isNotEmpty;
   bool get hasWebsite => websiteUrl != null && websiteUrl!.trim().isNotEmpty;
+  bool get hasAddress => address != null && address!.trim().isNotEmpty;
+  bool get hasEmail => contactEmail != null && contactEmail!.trim().isNotEmpty;
 
   factory PartnerPage.fromMap(Map<String, dynamic> map) {
     return PartnerPage(
@@ -29,6 +35,8 @@ class PartnerPage {
       bio: map['bio'] as String?,
       bannerUrl: map['banner_url'] as String?,
       websiteUrl: map['website_url'] as String?,
+      address: map['address'] as String?,
+      contactEmail: map['contact_email'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
     );
   }
