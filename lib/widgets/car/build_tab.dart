@@ -157,7 +157,9 @@ class _BuildTabState extends State<BuildTab> {
   Map<String, List<BuildEntry>> _group(List<BuildEntry> entries) {
     final map = <String, List<BuildEntry>>{};
     for (final e in entries) {
-      final key = e.hasCategory ? e.category!.trim() : _generalLabel;
+      // Own category, else the linked mod's category, else General — so a post
+      // linked to (say) a Suspension mod files under Suspension.
+      final key = e.effectiveCategory ?? _generalLabel;
       (map[key] ??= []).add(e);
     }
     return map;

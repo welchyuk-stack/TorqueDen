@@ -152,9 +152,8 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     ).push(MaterialPageRoute(builder: (_) => CarDetailScreen(car: car)));
   }
 
-  /// Phase-1 search suggestions: frequency-ranked keywords drawn from the cars
-  /// you follow and your own garage — their makes/models/chassis codes and the
-  /// mod categories logged against them. No history logging or ML; purely
+  /// Phase-1 search suggestions: frequency-ranked makes and models drawn from
+  /// the cars you follow and your own garage. No history logging or ML; purely
   /// derived from data we already have. Returns [] when there's nothing to go on
   /// (e.g. a brand-new user), which hides the bar.
   Future<List<String>> _loadSuggestions() async {
@@ -172,51 +171,30 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
       if (followedIds.isNotEmpty) {
         carRows.addAll(
           List<Map<String, dynamic>>.from(
-            await _client
-                .from('cars')
-                .select('id, make, model, chassis_model')
-                .inFilter('id', followedIds),
+            await _client.from('cars').select('make, model').inFilter('id', followedIds),
           ),
         );
       }
       carRows.addAll(
         List<Map<String, dynamic>>.from(
-          await _client
-              .from('cars')
-              .select('id, make, model, chassis_model')
-              .eq('owner_id', uid),
+          await _client.from('cars').select('make, model').eq('owner_id', uid),
         ),
       );
 
-      // Mod categories logged against those cars.
-      final carIds = {for (final c in carRows) c['id'] as String}.toList();
-      final catRows = carIds.isEmpty
-          ? const <Map<String, dynamic>>[]
-          : List<Map<String, dynamic>>.from(
-              await _client
-                  .from('build_entries')
-                  .select('category')
-                  .inFilter('car_id', carIds),
-            );
-
-      // Tally, case-insensitively, keeping the first-seen display spelling.
+      // Tally makes + models, case-insensitively, keeping first-seen spelling.
       final counts = <String, int>{};
       final display = <String, String>{};
-      void bump(String? raw, int weight) {
+      void bump(String? raw) {
         final t = raw?.trim() ?? '';
         if (t.isEmpty) return;
         final key = t.toLowerCase();
-        counts[key] = (counts[key] ?? 0) + weight;
+        counts[key] = (counts[key] ?? 0) + 1;
         display.putIfAbsent(key, () => t);
       }
 
       for (final c in carRows) {
-        bump(c['make'] as String?, 2); // makes/models weighted above chassis
-        bump(c['model'] as String?, 2);
-        bump(c['chassis_model'] as String?, 1);
-      }
-      for (final r in catRows) {
-        bump(r['category'] as String?, 1);
+        bump(c['make'] as String?);
+        bump(c['model'] as String?);
       }
 
       final keys = counts.keys.toList()
@@ -582,10 +560,10 @@ class _GridTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        // A very thin ember outline over the tile edge.
+        // A very thin off-white outline over the tile edge.
         foregroundDecoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.ember, width: 0.5),
+          border: Border.all(color: AppColors.cream, width: 0.5),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(14),

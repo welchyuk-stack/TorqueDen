@@ -453,11 +453,9 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
             padding: EdgeInsets.fromLTRB(10, topPad + 6, 12, 12),
             child: Column(
               children: [
-                // Top: back · name (left)  ·  rules · manage (right)
+                // Top: name (left)  ·  rules · manage (right)
                 Row(
                   children: [
-                    _CircleBtn(icon: Icons.arrow_back, onTap: () => Navigator.of(context).pop()),
-                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         _club.name,
@@ -486,10 +484,12 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                   ],
                 ),
                 const Spacer(),
-                // Bottom: members · online (left)  ·  join / owner (right)
+                // Bottom: back · members · online (left)  ·  join / owner (right)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
+                    _CircleBtn(icon: Icons.arrow_back, onTap: () => Navigator.of(context).pop()),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Row(
                         children: [

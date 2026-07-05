@@ -303,7 +303,7 @@ class _FeedCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.graphite,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.hairline),
+        border: Border.all(color: AppColors.cream, width: 0.5),
       ),
       padding: const EdgeInsets.all(16),
       child: Column(

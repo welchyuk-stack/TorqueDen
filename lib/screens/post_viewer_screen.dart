@@ -128,7 +128,7 @@ class _PostViewerScreenState extends State<PostViewerScreen> {
                 left: 0,
                 right: 0,
                 height: _commentsOpen ? h - commentsH : h,
-                child: _mediaArea(),
+                child: _mediaArea(_commentsOpen ? h - commentsH : h),
               ),
               // Comments panel — slides up from below into the bottom slice.
               AnimatedPositioned(
@@ -149,7 +149,7 @@ class _PostViewerScreenState extends State<PostViewerScreen> {
     );
   }
 
-  Widget _mediaArea() {
+  Widget _mediaArea(double mediaHeight) {
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -179,11 +179,12 @@ class _PostViewerScreenState extends State<PostViewerScreen> {
             onTap: () => Navigator.of(context).pop(),
           ),
         ),
-        // Like + comment rail — bottom-right.
+        // Like + comment rail — raised into the lower-third on the right
+        // (a fraction of the media height so it holds in both open/closed).
         if (_entryId != null)
           Positioned(
             right: 12,
-            bottom: 20,
+            bottom: mediaHeight * 0.25,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

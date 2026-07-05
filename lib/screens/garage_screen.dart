@@ -163,8 +163,12 @@ class _CarCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: AppColors.graphite,
-      borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
+      // Thin off-white outline around the car picture.
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: AppColors.cream, width: 0.5),
+      ),
       child: InkWell(
         onTap: onTap,
         child: AspectRatio(

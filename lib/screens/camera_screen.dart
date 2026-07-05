@@ -256,20 +256,23 @@ class _CameraScreenState extends State<CameraScreen>
                     bottom: MediaQuery.viewPaddingOf(context).bottom + 28,
                     child: Column(
                       children: [
-                        if (!_isRecording)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 18),
-                            child: Text(
-                              'Tap for photo  ·  hold to record',
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: Colors.white.withValues(alpha: 0.85),
-                                shadows: const [Shadow(color: Colors.black54, blurRadius: 6)],
-                              ),
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 18),
+                          child: Text(
+                            _isRecording
+                                ? 'Tap to stop'
+                                : 'Tap for photo  ·  hold to record',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              color: Colors.white.withValues(alpha: 0.85),
+                              shadows: const [Shadow(color: Colors.black54, blurRadius: 6)],
                             ),
                           ),
+                        ),
                         GestureDetector(
-                          onTap: _takePhoto,
+                          // While recording, a tap stops it (as well as
+                          // releasing the hold). Idle: tap = photo, hold = record.
+                          onTap: _isRecording ? _stopRecording : _takePhoto,
                           onLongPressStart: (_) => _startRecording(),
                           onLongPressEnd: (_) => _stopRecording(),
                           child: _CaptureButton(ring: _ring, recording: _isRecording),

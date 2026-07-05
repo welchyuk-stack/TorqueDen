@@ -12,6 +12,7 @@ class BuildEntry {
     required this.createdAt,
     this.media = const [],
     this.linkedModLabel,
+    this.linkedCategory,
   });
 
   final String id;
@@ -29,9 +30,21 @@ class BuildEntry {
   /// or null if it isn't linked to one.
   final String? linkedModLabel;
 
+  /// The category of the mod this entry links to (e.g. "Suspension"), if any.
+  /// Used to file linked posts under the right section in the build log.
+  final String? linkedCategory;
+
   bool get hasMedia => media.isNotEmpty;
   bool get hasCategory => category != null && category!.trim().isNotEmpty;
   bool get hasLinkedMod => linkedModLabel != null && linkedModLabel!.isNotEmpty;
+
+  /// Which build-log section this entry belongs to: its own category, else the
+  /// linked mod's category, else null (→ "General").
+  String? get effectiveCategory {
+    if (hasCategory) return category!.trim();
+    final lc = linkedCategory?.trim();
+    return (lc != null && lc.isNotEmpty) ? lc : null;
+  }
 
   /// Builds a "Category · Title" label from an embedded linked build entry.
   static String? _labelFromLinked(Map<String, dynamic>? linked) {
@@ -50,6 +63,7 @@ class BuildEntry {
         .toList()
       ..sort((a, b) => a.position.compareTo(b.position));
 
+    final linked = map['linked'] as Map<String, dynamic>?;
     return BuildEntry(
       id: map['id'] as String,
       carId: map['car_id'] as String,
@@ -58,7 +72,8 @@ class BuildEntry {
       category: map['category'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
       media: media,
-      linkedModLabel: _labelFromLinked(map['linked'] as Map<String, dynamic>?),
+      linkedModLabel: _labelFromLinked(linked),
+      linkedCategory: linked?['category'] as String?,
     );
   }
 }
