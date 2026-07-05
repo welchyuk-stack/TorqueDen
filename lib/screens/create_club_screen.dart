@@ -260,23 +260,21 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.graphite,
+                  SwitchListTile(
+                    value: _private,
+                    onChanged: _saving ? null : (v) => setState(() => _private = v),
+                    activeThumbColor: AppColors.ember,
+                    tileColor: AppColors.graphite,
+                    shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: AppColors.hairline),
+                      side: const BorderSide(color: AppColors.hairline),
                     ),
-                    child: SwitchListTile(
-                      value: _private,
-                      onChanged: _saving ? null : (v) => setState(() => _private = v),
-                      activeThumbColor: AppColors.ember,
-                      title: const Text('Private club',
-                          style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                      subtitle: const Text(
-                          'People must request to join, and only members see the discussions.',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                      secondary: Icon(_private ? Icons.lock : Icons.public, color: AppColors.steel),
-                    ),
+                    title: const Text('Private club',
+                        style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                    subtitle: const Text(
+                        'People must request to join, and only members see the discussions.',
+                        style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                    secondary: Icon(_private ? Icons.lock : Icons.public, color: AppColors.steel),
                   ),
                   const SizedBox(height: 16),
                   if (_saving)

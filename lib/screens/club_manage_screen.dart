@@ -48,6 +48,14 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     0: 'Off', 30: '30 seconds', 60: '1 minute', 300: '5 minutes', 900: '15 minutes',
   };
 
+  /// Shared rounded card outline for the switch/list tiles below (so each tile
+  /// paints its own background + ink, instead of a wrapping DecoratedBox that
+  /// would hide the ripple).
+  static const _cardShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(14)),
+    side: BorderSide(color: AppColors.hairline),
+  );
+
   @override
   void initState() {
     super.initState();
@@ -464,61 +472,46 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
               const SizedBox(height: 16),
 
               // Private
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.graphite,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.hairline),
-                ),
-                child: SwitchListTile(
-                  value: _club.isPrivate,
-                  onChanged: _togglePrivate,
-                  activeThumbColor: AppColors.ember,
-                  title: Text('Private club',
-                      style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                  subtitle: Text('People request to join and only members see posts. Still listed in Discover.',
-                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
-                  secondary: Icon(_club.isPrivate ? Icons.lock : Icons.public, color: AppColors.steel),
-                ),
+              SwitchListTile(
+                value: _club.isPrivate,
+                onChanged: _togglePrivate,
+                activeThumbColor: AppColors.ember,
+                tileColor: AppColors.graphite,
+                shape: _cardShape,
+                title: Text('Private club',
+                    style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                subtitle: Text('People request to join and only members see posts. Still listed in Discover.',
+                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                secondary: Icon(_club.isPrivate ? Icons.lock : Icons.public, color: AppColors.steel),
               ),
               const SizedBox(height: 10),
 
               // Lock
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.graphite,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.hairline),
-                ),
-                child: SwitchListTile(
-                  value: _club.isLocked,
-                  onChanged: _toggleLock,
-                  activeThumbColor: AppColors.ember,
-                  title: Text('Lock club',
-                      style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                  subtitle: Text('Members can\'t post while locked. You still can.',
-                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
-                  secondary: Icon(_club.isLocked ? Icons.lock : Icons.lock_open, color: AppColors.steel),
-                ),
+              SwitchListTile(
+                value: _club.isLocked,
+                onChanged: _toggleLock,
+                activeThumbColor: AppColors.ember,
+                tileColor: AppColors.graphite,
+                shape: _cardShape,
+                title: Text('Lock club',
+                    style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                subtitle: Text('Members can\'t post while locked. You still can.',
+                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                secondary: Icon(_club.isLocked ? Icons.lock : Icons.lock_open, color: AppColors.steel),
               ),
               const SizedBox(height: 10),
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.graphite,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.hairline),
-                ),
-                child: SwitchListTile(
-                  value: _club.isArchived,
-                  onChanged: _toggleArchive,
-                  activeThumbColor: AppColors.ember,
-                  title: Text('Archive club',
-                      style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                  subtitle: Text('Read-only — nobody can post, including you.',
-                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
-                  secondary: Icon(_club.isArchived ? Icons.inventory_2 : Icons.inventory_2_outlined,
-                      color: AppColors.steel),
-                ),
+              SwitchListTile(
+                value: _club.isArchived,
+                onChanged: _toggleArchive,
+                activeThumbColor: AppColors.ember,
+                tileColor: AppColors.graphite,
+                shape: _cardShape,
+                title: Text('Archive club',
+                    style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                subtitle: Text('Read-only — nobody can post, including you.',
+                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                secondary: Icon(_club.isArchived ? Icons.inventory_2 : Icons.inventory_2_outlined,
+                    color: AppColors.steel),
               ),
               const SizedBox(height: 14),
 
@@ -566,29 +559,27 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
               const SizedBox(height: 24),
 
               // Members — opens a searchable full-screen list.
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.graphite,
+              ListTile(
+                onTap: _openMembers,
+                tileColor: AppColors.graphite,
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.hairline),
+                  side: const BorderSide(color: AppColors.hairline),
                 ),
-                child: ListTile(
-                  onTap: _openMembers,
-                  leading: const Icon(Icons.group_outlined, color: AppColors.steel),
-                  title: Text('Members',
-                      style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                  subtitle: FutureBuilder<List<_Member>>(
-                    future: _membersFuture,
-                    builder: (context, snapshot) {
-                      final n = snapshot.data?.length;
-                      return Text(
-                        n == null ? 'Manage roles, mutes and bans' : '$n ${n == 1 ? 'member' : 'members'} · manage roles, mutes and bans',
-                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13),
-                      );
-                    },
-                  ),
-                  trailing: const Icon(Icons.chevron_right, color: AppColors.steel),
+                leading: const Icon(Icons.group_outlined, color: AppColors.steel),
+                title: Text('Members',
+                    style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                subtitle: FutureBuilder<List<_Member>>(
+                  future: _membersFuture,
+                  builder: (context, snapshot) {
+                    final n = snapshot.data?.length;
+                    return Text(
+                      n == null ? 'Manage roles, mutes and bans' : '$n ${n == 1 ? 'member' : 'members'} · manage roles, mutes and bans',
+                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13),
+                    );
+                  },
                 ),
+                trailing: const Icon(Icons.chevron_right, color: AppColors.steel),
               ),
               const SizedBox(height: 20),
 

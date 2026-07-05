@@ -3,14 +3,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
-import 'package:torqueden/services/location_service.dart';
+import 'package:torqueden/screens/location_settings_screen.dart';
 import 'package:torqueden/services/moderation.dart';
+import 'package:torqueden/services/saved_location.dart';
+import 'package:torqueden/services/units_pref.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/settings_button.dart';
-
-/// Miles per kilometre — the UI shows distances in miles (UK).
-const double _milesPerKm = 0.621371;
 
 /// Discover tab — a dense Instagram-explore-style grid of everyone else's cars.
 /// Tap a tile to open the full profile (and follow from there). A search box
@@ -29,25 +28,32 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   late Future<List<Car>> _future;
   String _query = '';
 
-  // Location search ("near me") state.
+  // Location search ("near me") state. The centre comes from the location the
+  // user set in Settings (SavedLocation), not a live GPS grab.
   bool _nearMe = false;
-  bool _locating = false;
   double? _centerLat;
   double? _centerLng;
   String? _centerLabel;
-  double _radiusMiles = 50;
+  double _radiusKm = 50;
 
   static const double _minRadius = 5;
-  static const double _maxRadius = 500;
+  static const double _maxRadius = 250; // cap the search at 250 km
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+    _applySavedLocation();
     _searchController.addListener(() {
       final q = _searchController.text.trim();
       if (q != _query) setState(() => _query = q);
     });
+  }
+
+  void _applySavedLocation() {
+    _centerLat = SavedLocation.lat;
+    _centerLng = SavedLocation.lng;
+    _centerLabel = SavedLocation.label;
   }
 
   @override
@@ -91,68 +97,49 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
   /// Applies the text filter, then — when "near me" is on with a center set —
   /// keeps only cars inside the radius and sorts them nearest-first. Each entry
-  /// carries its distance (km) so the tile can show "X mi away".
+  /// carries its distance (km) so the tile can show the "X away" badge.
   List<_ScoredCar> _visibleCars(List<Car> cars) {
     final textMatched = _textFilter(cars);
     if (!_nearMe || _centerLat == null || _centerLng == null) {
       return [for (final c in textMatched) _ScoredCar(c, null)];
     }
-    final radiusKm = _radiusMiles / _milesPerKm;
     final scored = <_ScoredCar>[];
     for (final car in textMatched) {
       final d = car.distanceKmFrom(_centerLat!, _centerLng!);
-      if (d != null && d <= radiusKm) scored.add(_ScoredCar(car, d));
+      if (d != null && d <= _radiusKm) scored.add(_ScoredCar(car, d));
     }
     scored.sort((a, b) => a.distanceKm!.compareTo(b.distanceKm!));
     return scored;
   }
 
-  /// Turns "near me" on/off. Turning it on grabs the device location first.
+  /// Turns "near me" on/off. Turning it on needs a saved location — if none is
+  /// set, we send the user to the Location screen to set one first.
   Future<void> _toggleNearMe(bool on) async {
     if (!on) {
       setState(() => _nearMe = false);
       return;
     }
-    if (_centerLat != null) {
-      setState(() => _nearMe = true);
-      return;
+    if (!SavedLocation.isSet) {
+      await _openLocationSettings();
+      if (!SavedLocation.isSet) return; // user backed out without setting one
     }
-    await _setLocationCenter(enableAfter: true);
+    setState(() {
+      _applySavedLocation();
+      _nearMe = true;
+    });
   }
 
-  /// Fetches the device location and uses it as the search center.
-  Future<void> _setLocationCenter({bool enableAfter = false}) async {
-    setState(() => _locating = true);
-    try {
-      final place = await LocationService.currentPlace();
-      if (!mounted) return;
-      setState(() {
-        _centerLat = place.latitude;
-        _centerLng = place.longitude;
-        _centerLabel = place.label;
-        if (enableAfter) _nearMe = true;
-      });
-    } on LocationException catch (e) {
-      _notify(e.message);
-    } catch (e) {
-      _notify('Could not get your location: $e');
-    } finally {
-      if (mounted) setState(() => _locating = false);
-    }
-  }
-
-  void _notify(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  /// "12 mi away" / "0.4 mi away" / "Here" from a distance in km.
-  static String _milesLabel(double km) {
-    final mi = km * _milesPerKm;
-    if (mi < 0.1) return 'Here';
-    if (mi < 10) return '${mi.toStringAsFixed(1)} mi away';
-    return '${mi.round()} mi away';
+  /// Opens the Location screen (where the user sets their location) and applies
+  /// any change to the search centre on return.
+  Future<void> _openLocationSettings() async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const LocationSettingsScreen()),
+    );
+    if (!mounted || changed != true) return;
+    setState(() {
+      _applySavedLocation();
+      if (!SavedLocation.isSet) _nearMe = false; // location was cleared
+    });
   }
 
   Future<void> _openCar(Car car) async {
@@ -198,14 +185,13 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
             ),
             _LocationBar(
               nearMe: _nearMe,
-              locating: _locating,
               centerLabel: _centerLabel,
-              radiusMiles: _radiusMiles,
+              radiusKm: _radiusKm,
               minRadius: _minRadius,
               maxRadius: _maxRadius,
-              onToggle: _locating ? null : _toggleNearMe,
-              onChangeLocation: _locating ? null : () => _setLocationCenter(),
-              onRadiusChanged: (v) => setState(() => _radiusMiles = v),
+              onToggle: _toggleNearMe,
+              onChangeLocation: _openLocationSettings,
+              onRadiusChanged: (v) => setState(() => _radiusKm = v),
             ),
             Expanded(
               child: FutureBuilder<List<Car>>(
@@ -254,7 +240,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                   final visible = _visibleCars(cars);
                   if (visible.isEmpty) {
                     final msg = _nearMe
-                        ? 'No cars within ${_radiusMiles.round()} mi'
+                        ? 'No cars within ${UnitsPref.radiusLabel(_radiusKm)}'
                         : 'No matches';
                     return Center(
                       child: Text(
@@ -288,7 +274,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                             car: visible[i].car,
                             distanceLabel: visible[i].distanceKm == null
                                 ? null
-                                : _milesLabel(visible[i].distanceKm!),
+                                : UnitsPref.distanceLabel(visible[i].distanceKm!),
                             onTap: () => _openCar(visible[i].car),
                           ),
                         );
@@ -418,9 +404,8 @@ class _TileFallback extends StatelessWidget {
 class _LocationBar extends StatelessWidget {
   const _LocationBar({
     required this.nearMe,
-    required this.locating,
     required this.centerLabel,
-    required this.radiusMiles,
+    required this.radiusKm,
     required this.minRadius,
     required this.maxRadius,
     required this.onToggle,
@@ -429,9 +414,8 @@ class _LocationBar extends StatelessWidget {
   });
 
   final bool nearMe;
-  final bool locating;
   final String? centerLabel;
-  final double radiusMiles;
+  final double radiusKm;
   final double minRadius;
   final double maxRadius;
   final ValueChanged<bool>? onToggle;
@@ -461,13 +445,7 @@ class _LocationBar extends StatelessWidget {
                     : (v) => onToggle!(v),
               ),
               const SizedBox(width: 10),
-              if (locating)
-                const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ember),
-                )
-              else if (nearMe)
+              if (nearMe)
                 Expanded(
                   child: GestureDetector(
                     onTap: onChangeLocation,
@@ -477,7 +455,7 @@ class _LocationBar extends StatelessWidget {
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
-                            centerLabel ?? 'Current location',
+                            centerLabel ?? 'Your location',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.inter(
@@ -501,7 +479,7 @@ class _LocationBar extends StatelessWidget {
                 ),
             ],
           ),
-          if (nearMe && !locating)
+          if (nearMe)
             Row(
               children: [
                 Text(
@@ -510,19 +488,19 @@ class _LocationBar extends StatelessWidget {
                 ),
                 Expanded(
                   child: Slider(
-                    value: radiusMiles.clamp(minRadius, maxRadius),
+                    value: radiusKm.clamp(minRadius, maxRadius),
                     min: minRadius,
                     max: maxRadius,
                     divisions: ((maxRadius - minRadius) / 5).round(),
                     activeColor: AppColors.ember,
-                    label: '${radiusMiles.round()} mi',
+                    label: UnitsPref.radiusLabel(radiusKm),
                     onChanged: onRadiusChanged,
                   ),
                 ),
                 SizedBox(
-                  width: 52,
+                  width: 58,
                   child: Text(
-                    '${radiusMiles.round()} mi',
+                    UnitsPref.radiusLabel(radiusKm),
                     textAlign: TextAlign.end,
                     style: GoogleFonts.inter(
                       fontSize: 13,

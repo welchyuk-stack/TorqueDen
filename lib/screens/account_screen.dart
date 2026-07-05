@@ -298,14 +298,14 @@ class _AccountScreenState extends State<AccountScreen> {
     required String actionLabel,
     required VoidCallback onTap,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(top: 10),
-      decoration: BoxDecoration(
-        color: AppColors.graphite,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.hairline),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
       child: ListTile(
+        tileColor: AppColors.graphite,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: AppColors.hairline),
+        ),
         leading: Icon(icon, color: AppColors.steel),
         title: Text(title, style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
         subtitle: Text(subtitle,

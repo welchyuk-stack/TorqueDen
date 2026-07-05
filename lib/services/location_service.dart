@@ -95,4 +95,27 @@ class LocationService {
       label: label,
     );
   }
+
+  /// Forward-geocodes a typed place (town, postcode, "City, Country") into a
+  /// [LocatedPlace]. Coordinates are fuzzed to the ~1 km grid, and the label is
+  /// resolved back from those coordinates for a consistent "Town, Country".
+  /// Throws [LocationException] if nothing matches.
+  static Future<LocatedPlace> search(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) throw const LocationException('Enter a place to search for.');
+    List<Location> results;
+    try {
+      results = await Geocoding().locationFromAddress(trimmed);
+    } catch (_) {
+      throw const LocationException('Couldn\'t look that place up. Check your connection and try again.');
+    }
+    if (results.isEmpty) throw const LocationException('No place found for that search.');
+    final loc = results.first;
+    final label = await describe(loc.latitude, loc.longitude);
+    return LocatedPlace(
+      latitude: fuzz(loc.latitude),
+      longitude: fuzz(loc.longitude),
+      label: label ?? trimmed,
+    );
+  }
 }

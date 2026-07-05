@@ -124,17 +124,17 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Widget _tile(_Pref p) {
     final value = _values[p.key] ?? true;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: AppColors.graphite,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.hairline),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
       child: SwitchListTile(
         value: value,
         onChanged: _busy.contains(p.key) ? null : (v) => _toggle(p.key, v),
         activeThumbColor: AppColors.ember,
+        tileColor: AppColors.graphite,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: AppColors.hairline),
+        ),
         secondary: Icon(p.icon, color: AppColors.steel),
         title: Text(p.title, style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
         subtitle: Text(p.subtitle, style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
