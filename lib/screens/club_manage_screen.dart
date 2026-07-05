@@ -34,6 +34,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
 
   late Club _club;
   late Future<List<_Member>> _membersFuture;
+  late Future<List<_Member>> _bannedFuture;
   bool _savingDetails = false;
   bool _uploading = false;
 
@@ -45,6 +46,58 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     _description.text = _club.description ?? '';
     _rules.text = _club.rules ?? '';
     _membersFuture = _loadMembers();
+    _bannedFuture = _loadBanned();
+  }
+
+  Future<List<_Member>> _loadBanned() async {
+    final rows = await _client
+        .from('club_bans')
+        .select('user_id, profiles(username)')
+        .eq('club_id', _club.id)
+        .order('created_at');
+    return rows.map((r) {
+      final p = r['profiles'];
+      return _Member(
+        userId: r['user_id'] as String,
+        role: 'banned',
+        username: p is Map ? p['username'] as String? : null,
+      );
+    }).toList();
+  }
+
+  Future<void> _setRole(_Member m, String role) async {
+    try {
+      await _client
+          .from('club_members')
+          .update({'role': role})
+          .eq('club_id', _club.id)
+          .eq('user_id', m.userId);
+      setState(() => _membersFuture = _loadMembers());
+    } catch (e) {
+      _snack('Could not update role: $e');
+    }
+  }
+
+  Future<void> _ban(_Member m) async {
+    try {
+      await _client.from('club_bans').insert({'club_id': _club.id, 'user_id': m.userId});
+      await _client.from('club_members').delete().eq('club_id', _club.id).eq('user_id', m.userId);
+      setState(() {
+        _membersFuture = _loadMembers();
+        _bannedFuture = _loadBanned();
+      });
+    } catch (e) {
+      _snack('Could not ban: $e');
+    }
+  }
+
+  Future<void> _unban(_Member m) async {
+    try {
+      await _client.from('club_bans').delete().eq('club_id', _club.id).eq('user_id', m.userId);
+      setState(() => _bannedFuture = _loadBanned());
+    } catch (e) {
+      _snack('Could not unban: $e');
+    }
   }
 
   @override
@@ -374,12 +427,53 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                           member: m,
                           onRemove: () => _removeMember(m),
                           onMakeOwner: () => _transferOwnership(m),
+                          onToggleAdmin: () =>
+                              _setRole(m, m.role == 'admin' ? 'member' : 'admin'),
+                          onBan: () => _ban(m),
                         ),
                     ],
                   );
                 },
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 20),
+
+              // Banned
+              FutureBuilder<List<_Member>>(
+                future: _bannedFuture,
+                builder: (context, snapshot) {
+                  final banned = snapshot.data ?? const <_Member>[];
+                  if (banned.isEmpty) return const SizedBox.shrink();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Banned',
+                          style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                      const SizedBox(height: 8),
+                      for (final b in banned)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.block, size: 20, color: AppColors.danger),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(b.username ?? 'Member',
+                                    style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 15)),
+                              ),
+                              TextButton(
+                                onPressed: () => _unban(b),
+                                child: Text('Unban',
+                                    style: GoogleFonts.inter(color: AppColors.ember, fontSize: 13, fontWeight: FontWeight.w600)),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 20),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 4),
 
               // Delete
               OutlinedButton.icon(
@@ -409,15 +503,24 @@ class _Member {
 }
 
 class _MemberRow extends StatelessWidget {
-  const _MemberRow({required this.member, required this.onRemove, required this.onMakeOwner});
+  const _MemberRow({
+    required this.member,
+    required this.onRemove,
+    required this.onMakeOwner,
+    required this.onToggleAdmin,
+    required this.onBan,
+  });
   final _Member member;
   final VoidCallback onRemove;
   final VoidCallback onMakeOwner;
+  final VoidCallback onToggleAdmin;
+  final VoidCallback onBan;
 
   @override
   Widget build(BuildContext context) {
     final name = member.username ?? 'Member';
     final isOwner = member.role == 'owner';
+    final isAdmin = member.role == 'admin';
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -433,16 +536,29 @@ class _MemberRow extends StatelessWidget {
           Expanded(
             child: Text(name, style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15)),
           ),
+          if (isAdmin)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Text('Admin',
+                  style: GoogleFonts.inter(color: AppColors.steel, fontSize: 12, fontWeight: FontWeight.w700)),
+            ),
           if (isOwner)
             Text('Owner', style: GoogleFonts.inter(color: AppColors.ember, fontSize: 12, fontWeight: FontWeight.w700))
           else
             PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert, color: AppColors.steel, size: 20),
               color: AppColors.graphiteRaised,
-              onSelected: (v) => v == 'owner' ? onMakeOwner() : onRemove(),
+              onSelected: (v) => switch (v) {
+                'owner' => onMakeOwner(),
+                'admin' => onToggleAdmin(),
+                'ban' => onBan(),
+                _ => onRemove(),
+              },
               itemBuilder: (_) => [
+                PopupMenuItem(value: 'admin', child: Text(isAdmin ? 'Remove admin' : 'Make admin')),
                 const PopupMenuItem(value: 'owner', child: Text('Make owner')),
                 const PopupMenuItem(value: 'remove', child: Text('Remove from club')),
+                const PopupMenuItem(value: 'ban', child: Text('Ban from club')),
               ],
             ),
         ],

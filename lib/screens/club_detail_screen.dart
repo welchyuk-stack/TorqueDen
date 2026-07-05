@@ -28,12 +28,14 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
   late Club _club;
   late Future<List<ClubThread>> _future;
   bool _member = false;
+  bool _isAdmin = false;
   int _memberCount = 0;
   bool _joining = false;
 
   String? get _uid => _client.auth.currentUser?.id;
   bool get _isOwner => _uid != null && _uid == _club.ownerId;
-  bool get _canPost => _member && !_club.isArchived && (!_club.isLocked || _isOwner);
+  bool get _isMod => _isOwner || _isAdmin;
+  bool get _canPost => _member && !_club.isArchived && (!_club.isLocked || _isMod);
 
   @override
   void initState() {
@@ -45,10 +47,12 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
 
   Future<List<ClubThread>> _load() async {
     await Moderation.refreshBlocks();
-    // Membership + member count.
+    // Membership + role + member count.
     final members =
-        await _client.from('club_members').select('user_id').eq('club_id', _club.id);
+        await _client.from('club_members').select('user_id, role').eq('club_id', _club.id);
     _member = _uid != null && members.any((m) => m['user_id'] == _uid);
+    _isAdmin = _uid != null &&
+        members.any((m) => m['user_id'] == _uid && m['role'] == 'admin');
     _memberCount = members.length;
 
     final rows = await _client
@@ -152,7 +156,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
         builder: (_) => ThreadDetailScreen(
           thread: thread,
           canPost: _canPost,
-          isOwner: _isOwner,
+          canModerate: _isMod,
         ),
       ),
     );
@@ -226,7 +230,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                     for (final t in threads) ...[
                       _ThreadRow(
                         thread: t,
-                        canDelete: _isOwner || t.authorId == _uid,
+                        canDelete: _isMod || t.authorId == _uid,
                         onTap: () => _openThread(t),
                         onDelete: () => _deleteThread(t),
                         onMore: () => _moderateThread(t),

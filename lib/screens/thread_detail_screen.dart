@@ -15,12 +15,14 @@ class ThreadDetailScreen extends StatefulWidget {
     super.key,
     required this.thread,
     required this.canPost,
-    required this.isOwner,
+    required this.canModerate,
   });
 
   final ClubThread thread;
   final bool canPost;
-  final bool isOwner;
+
+  /// Owner or admin: can pin, and delete any reply.
+  final bool canModerate;
 
   @override
   State<ThreadDetailScreen> createState() => _ThreadDetailScreenState();
@@ -120,7 +122,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
       appBar: AppBar(
         title: const Text('Thread'),
         actions: [
-          if (widget.isOwner)
+          if (widget.canModerate)
             IconButton(
               onPressed: _togglePin,
               icon: Icon(_pinned ? Icons.push_pin : Icons.push_pin_outlined,
@@ -193,7 +195,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
                           for (final r in replies)
                             _ReplyTile(
                               reply: r,
-                              canDelete: widget.isOwner || r.authorId == _uid,
+                              canDelete: widget.canModerate || r.authorId == _uid,
                               onDelete: () => _deleteReply(r),
                               onMore: () => showModerationSheet(
                                 context,

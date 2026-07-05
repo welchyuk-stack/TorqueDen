@@ -5,7 +5,7 @@
 -- Applied migrations (supabase/migrations/):
 --   0001_car_location · 0002_merge_mods_into_build · 0003_post_link_to_mod
 --   0004_fuzz_car_locations · 0005_clubs · 0006_club_admin · 0007_reports_blocks
---   0008_club_pins_rules_archive (pinned threads, club rules, archive, transfer)
+--   0008_club_pins_rules_archive · 0009_club_admins_bans (mods + member bans)
 --
 -- Not included: table data; the auth.users trigger for handle_new_user()
 -- (recreate: CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
@@ -16,7 +16,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 5g2veKMlYuB9VgcdxeZdJUcqAJSe4QkzUPa1TjNua8wPnNUVe2IzPpTOG1FbUSQ
+\restrict tW6HVQ982r9gvqfkPOXNRuzVGx21WjjlVnIRRO94fKgCB9KAnDvfJmmGsN2dBmx
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -77,6 +77,32 @@ begin
   on conflict (id) do nothing;
   return new;
 end; $$;
+
+
+--
+-- Name: is_banned(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_banned(club uuid, usr uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select exists (select 1 from club_bans b where b.club_id = club and b.user_id = usr);
+$$;
+
+
+--
+-- Name: is_club_mod(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_club_mod(club uuid) RETURNS boolean
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select exists (select 1 from clubs c where c.id = club and c.owner_id = auth.uid())
+      or exists (select 1 from club_members m
+                 where m.club_id = club and m.user_id = auth.uid() and m.role in ('owner','admin'));
+$$;
 
 
 SET default_tablespace = '';
@@ -144,6 +170,18 @@ CREATE TABLE public.cars (
     latitude double precision,
     longitude double precision,
     location_name text
+);
+
+
+--
+-- Name: club_bans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.club_bans (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    club_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -344,6 +382,22 @@ ALTER TABLE ONLY public.cars
 
 
 --
+-- Name: club_bans club_bans_club_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_bans
+    ADD CONSTRAINT club_bans_club_id_user_id_key UNIQUE (club_id, user_id);
+
+
+--
+-- Name: club_bans club_bans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_bans
+    ADD CONSTRAINT club_bans_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: club_members club_members_club_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -499,6 +553,13 @@ CREATE INDEX cars_owner_id_idx ON public.cars USING btree (owner_id);
 
 
 --
+-- Name: club_bans_club_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_bans_club_idx ON public.club_bans USING btree (club_id);
+
+
+--
 -- Name: club_members_club_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -607,6 +668,22 @@ ALTER TABLE ONLY public.car_specs
 
 ALTER TABLE ONLY public.cars
     ADD CONSTRAINT cars_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_bans club_bans_club_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_bans
+    ADD CONSTRAINT club_bans_club_id_fkey FOREIGN KEY (club_id) REFERENCES public.clubs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_bans club_bans_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_bans
+    ADD CONSTRAINT club_bans_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -762,41 +839,35 @@ ALTER TABLE ONLY public.reports
 
 
 --
--- Name: club_replies Author or owner can delete reply; Type: POLICY; Schema: public; Owner: -
+-- Name: club_replies Author or mod can delete reply; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Author or owner can delete reply" ON public.club_replies FOR DELETE USING (((author_id = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM (public.club_threads t
-     JOIN public.clubs c ON ((c.id = t.club_id)))
-  WHERE ((t.id = club_replies.thread_id) AND (c.owner_id = auth.uid()))))));
-
-
---
--- Name: club_threads Author or owner can delete thread; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Author or owner can delete thread" ON public.club_threads FOR DELETE USING (((author_id = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM public.clubs c
-  WHERE ((c.id = club_threads.club_id) AND (c.owner_id = auth.uid()))))));
+CREATE POLICY "Author or mod can delete reply" ON public.club_replies FOR DELETE USING (((author_id = auth.uid()) OR public.is_club_mod(( SELECT t.club_id
+   FROM public.club_threads t
+  WHERE (t.id = club_replies.thread_id)))));
 
 
 --
--- Name: club_replies Author or owner can update reply; Type: POLICY; Schema: public; Owner: -
+-- Name: club_threads Author or mod can delete thread; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Author or owner can update reply" ON public.club_replies FOR UPDATE USING (((author_id = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM (public.club_threads t
-     JOIN public.clubs c ON ((c.id = t.club_id)))
-  WHERE ((t.id = club_replies.thread_id) AND (c.owner_id = auth.uid()))))));
+CREATE POLICY "Author or mod can delete thread" ON public.club_threads FOR DELETE USING (((author_id = auth.uid()) OR public.is_club_mod(club_id)));
 
 
 --
--- Name: club_threads Author or owner can update thread; Type: POLICY; Schema: public; Owner: -
+-- Name: club_replies Author or mod can update reply; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Author or owner can update thread" ON public.club_threads FOR UPDATE USING (((author_id = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM public.clubs c
-  WHERE ((c.id = club_threads.club_id) AND (c.owner_id = auth.uid()))))));
+CREATE POLICY "Author or mod can update reply" ON public.club_replies FOR UPDATE USING (((author_id = auth.uid()) OR public.is_club_mod(( SELECT t.club_id
+   FROM public.club_threads t
+  WHERE (t.id = club_replies.thread_id)))));
+
+
+--
+-- Name: club_threads Author or mod can update thread; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Author or mod can update thread" ON public.club_threads FOR UPDATE USING (((author_id = auth.uid()) OR public.is_club_mod(club_id)));
 
 
 --
@@ -821,12 +892,10 @@ CREATE POLICY "File a report" ON public.reports FOR INSERT WITH CHECK ((reporter
 
 
 --
--- Name: club_members Leave or owner can remove; Type: POLICY; Schema: public; Owner: -
+-- Name: club_members Leave or mod can remove; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Leave or owner can remove" ON public.club_members FOR DELETE USING (((user_id = auth.uid()) OR (EXISTS ( SELECT 1
-   FROM public.clubs c
-  WHERE ((c.id = club_members.club_id) AND (c.owner_id = auth.uid()))))));
+CREATE POLICY "Leave or mod can remove" ON public.club_members FOR DELETE USING (((user_id = auth.uid()) OR public.is_club_mod(club_id)));
 
 
 --
@@ -863,11 +932,9 @@ CREATE POLICY "Members are viewable by everyone" ON public.club_members FOR SELE
 
 CREATE POLICY "Members can post threads" ON public.club_threads FOR INSERT WITH CHECK (((author_id = auth.uid()) AND (EXISTS ( SELECT 1
    FROM public.club_members m
-  WHERE ((m.club_id = club_threads.club_id) AND (m.user_id = auth.uid())))) AND (NOT (EXISTS ( SELECT 1
+  WHERE ((m.club_id = club_threads.club_id) AND (m.user_id = auth.uid())))) AND (NOT public.is_banned(club_id, auth.uid())) AND (NOT (EXISTS ( SELECT 1
    FROM public.clubs c
-  WHERE ((c.id = club_threads.club_id) AND c.is_archived)))) AND ((EXISTS ( SELECT 1
-   FROM public.clubs c
-  WHERE ((c.id = club_threads.club_id) AND (c.owner_id = auth.uid())))) OR (NOT (EXISTS ( SELECT 1
+  WHERE ((c.id = club_threads.club_id) AND c.is_archived)))) AND (public.is_club_mod(club_id) OR (NOT (EXISTS ( SELECT 1
    FROM public.clubs c
   WHERE ((c.id = club_threads.club_id) AND c.is_locked)))))));
 
@@ -879,16 +946,38 @@ CREATE POLICY "Members can post threads" ON public.club_threads FOR INSERT WITH 
 CREATE POLICY "Members can reply" ON public.club_replies FOR INSERT WITH CHECK (((author_id = auth.uid()) AND (EXISTS ( SELECT 1
    FROM (public.club_members m
      JOIN public.club_threads t ON ((t.club_id = m.club_id)))
-  WHERE ((t.id = club_replies.thread_id) AND (m.user_id = auth.uid())))) AND (NOT (EXISTS ( SELECT 1
+  WHERE ((t.id = club_replies.thread_id) AND (m.user_id = auth.uid())))) AND (NOT public.is_banned(( SELECT t.club_id
+   FROM public.club_threads t
+  WHERE (t.id = club_replies.thread_id)), auth.uid())) AND (NOT (EXISTS ( SELECT 1
    FROM (public.club_threads t
      JOIN public.clubs c ON ((c.id = t.club_id)))
-  WHERE ((t.id = club_replies.thread_id) AND c.is_archived)))) AND ((EXISTS ( SELECT 1
-   FROM (public.club_threads t
-     JOIN public.clubs c ON ((c.id = t.club_id)))
-  WHERE ((t.id = club_replies.thread_id) AND (c.owner_id = auth.uid())))) OR (NOT (EXISTS ( SELECT 1
+  WHERE ((t.id = club_replies.thread_id) AND c.is_archived)))) AND (public.is_club_mod(( SELECT t.club_id
+   FROM public.club_threads t
+  WHERE (t.id = club_replies.thread_id))) OR (NOT (EXISTS ( SELECT 1
    FROM (public.club_threads t
      JOIN public.clubs c ON ((c.id = t.club_id)))
   WHERE ((t.id = club_replies.thread_id) AND c.is_locked)))))));
+
+
+--
+-- Name: club_bans Mods add bans; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Mods add bans" ON public.club_bans FOR INSERT WITH CHECK (public.is_club_mod(club_id));
+
+
+--
+-- Name: club_bans Mods remove bans; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Mods remove bans" ON public.club_bans FOR DELETE USING (public.is_club_mod(club_id));
+
+
+--
+-- Name: club_bans Mods view bans; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Mods view bans" ON public.club_bans FOR SELECT USING (public.is_club_mod(club_id));
 
 
 --
@@ -981,7 +1070,7 @@ CREATE POLICY "Users can insert their own profile" ON public.profiles FOR INSERT
 -- Name: club_members Users can join clubs; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can join clubs" ON public.club_members FOR INSERT WITH CHECK ((user_id = auth.uid()));
+CREATE POLICY "Users can join clubs" ON public.club_members FOR INSERT WITH CHECK (((user_id = auth.uid()) AND (NOT public.is_banned(club_id, auth.uid()))));
 
 
 --
@@ -1014,6 +1103,12 @@ ALTER TABLE public.car_specs ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.cars ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: club_bans; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.club_bans ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: club_members; Type: ROW SECURITY; Schema: public; Owner: -
@@ -1224,6 +1319,24 @@ GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
 --
+-- Name: FUNCTION is_banned(club uuid, usr uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.is_banned(club uuid, usr uuid) TO anon;
+GRANT ALL ON FUNCTION public.is_banned(club uuid, usr uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.is_banned(club uuid, usr uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION is_club_mod(club uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.is_club_mod(club uuid) TO anon;
+GRANT ALL ON FUNCTION public.is_club_mod(club uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.is_club_mod(club uuid) TO service_role;
+
+
+--
 -- Name: TABLE blocks; Type: ACL; Schema: public; Owner: -
 --
 
@@ -1257,6 +1370,15 @@ GRANT ALL ON TABLE public.car_specs TO service_role;
 GRANT ALL ON TABLE public.cars TO anon;
 GRANT ALL ON TABLE public.cars TO authenticated;
 GRANT ALL ON TABLE public.cars TO service_role;
+
+
+--
+-- Name: TABLE club_bans; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.club_bans TO anon;
+GRANT ALL ON TABLE public.club_bans TO authenticated;
+GRANT ALL ON TABLE public.club_bans TO service_role;
 
 
 --
@@ -1422,5 +1544,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 5g2veKMlYuB9VgcdxeZdJUcqAJSe4QkzUPa1TjNua8wPnNUVe2IzPpTOG1FbUSQ
+\unrestrict tW6HVQ982r9gvqfkPOXNRuzVGx21WjjlVnIRRO94fKgCB9KAnDvfJmmGsN2dBmx
 
