@@ -14,10 +14,10 @@
 	<string>TorqueDen uses Face ID to unlock the app when you turn on biometric lock.</string>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>Allow tracking to show you more relevant ads. TorqueDen works either way.</string>
-	<!-- AdMob app ID. Currently Google's TEST app ID — replace with the real one
-	     (and set AdIds.useTestAds = false) before release. -->
+	<!-- Real TorqueDen AdMob app ID. Ad *unit* IDs stay on Google test IDs while
+	     AdIds.useTestAds = true (dev); flip that to false for release builds. -->
 	<key>GADApplicationIdentifier</key>
-	<string>ca-app-pub-3940256099942544~1458002511</string>
+	<string>ca-app-pub-2582133147245512~9185774776</string>
 	<!-- SKAdNetwork IDs for ad attribution on iOS 14+ (Google AdMob's
 	     recommended set, incl. common mediation partners). Keep in sync with
 	     Google's published list: https://developers.google.com/admob/ios/ios14 -->

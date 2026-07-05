@@ -16,8 +16,9 @@ class AdIds {
   static const String _testBannerIos = 'ca-app-pub-3940256099942544/2934735716';
   static const String _testBannerAndroid = 'ca-app-pub-3940256099942544/6300978111';
 
-  // TODO: real ad unit IDs once the AdMob app is set up.
-  static const String _realBannerIos = 'ca-app-pub-0000000000000000/0000000000';
+  // Real TorqueDen feed MREC (300x250) banner unit. iOS is live; Android is
+  // parked, so its real ID is still a placeholder.
+  static const String _realBannerIos = 'ca-app-pub-2582133147245512/3458840764';
   static const String _realBannerAndroid = 'ca-app-pub-0000000000000000/0000000000';
 
   static String get feedBanner {
