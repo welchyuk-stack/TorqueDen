@@ -3,6 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/screens/about_screen.dart';
 import 'package:torqueden/screens/account_screen.dart';
+import 'package:torqueden/screens/contact_screen.dart';
+import 'package:torqueden/screens/donate_screen.dart';
+import 'package:torqueden/screens/invite_screen.dart';
+import 'package:torqueden/screens/membership_screen.dart';
 import 'package:torqueden/screens/notifications_screen.dart';
 import 'package:torqueden/theme.dart';
 
@@ -61,6 +65,13 @@ class SettingsScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const AccountScreen()),
               ),
             ),
+            _SettingTile(
+              icon: Icons.workspace_premium_outlined,
+              label: 'Membership',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const MembershipScreen()),
+              ),
+            ),
             const _SectionHeader('App'),
             _SettingTile(
               icon: Icons.notifications_none,
@@ -77,6 +88,29 @@ class SettingsScreen extends StatelessWidget {
                 MaterialPageRoute(builder: (_) => const AboutScreen()),
               ),
             ),
+            const _SectionHeader('Support'),
+            _SettingTile(
+              icon: Icons.mail_outline,
+              label: 'Contact us & Feedback',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ContactScreen()),
+              ),
+            ),
+            _SettingTile(
+              icon: Icons.group_add_outlined,
+              label: 'Invite friends',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const InviteScreen()),
+              ),
+            ),
+            _SettingTile(
+              icon: Icons.volunteer_activism_outlined,
+              label: 'Donate',
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DonateScreen()),
+              ),
+            ),
+            const SizedBox(height: 8),
             _SettingTile(
               icon: Icons.logout,
               label: 'Log out',
