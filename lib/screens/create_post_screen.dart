@@ -10,6 +10,7 @@ import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/add_car_screen.dart';
 import 'package:torqueden/screens/camera_screen.dart';
 import 'package:torqueden/screens/video_trim_screen.dart';
+import 'package:torqueden/services/review_service.dart';
 import 'package:torqueden/services/video_trim_service.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
@@ -284,6 +285,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       }
       await _client.from('post_media').insert(mediaRows);
 
+      // A post is a positive moment — maybe ask for an App Store review
+      // (gated: after the 2nd post, once per version). Fire-and-forget.
+      ReviewService.recordPositiveEvent();
       if (mounted) Navigator.of(context).pop(true);
     } on StorageException catch (e) {
       _fail('Upload failed: ${e.message}');

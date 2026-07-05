@@ -52,6 +52,7 @@ dependencies:
   purchases_flutter: ^10.4.0
   firebase_core: ^4.11.0
   firebase_messaging: ^16.4.1
+  in_app_review: ^2.0.12
 dev_dependencies:
   flutter_test:
     sdk: flutter
