@@ -6,7 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 class AppColors {
   AppColors._();
 
-  static const carbon = Color(0xFF15171B); // app background / ink
+  static const carbon = Color(0xFF15171B); // deep ink — banners, scrims, nav
+  static const background = Color(0xFF2A2F38); // app screen background (grey)
   static const graphite = Color(0xFF1C2026); // card surface
   static const graphiteRaised = Color(0xFF23272E); // elevated wells
   static const hairline = Color(0xFF2C313A); // borders / dividers
@@ -33,7 +34,7 @@ ThemeData buildTorqueDenTheme() {
   );
 
   return base.copyWith(
-    scaffoldBackgroundColor: AppColors.carbon,
+    scaffoldBackgroundColor: AppColors.background,
     colorScheme: const ColorScheme.dark(
       primary: AppColors.ember,
       onPrimary: AppColors.onEmber,
@@ -46,7 +47,7 @@ ThemeData buildTorqueDenTheme() {
     ),
     textTheme: textTheme,
     appBarTheme: AppBarTheme(
-      backgroundColor: AppColors.carbon,
+      backgroundColor: AppColors.background,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       scrolledUnderElevation: 0,

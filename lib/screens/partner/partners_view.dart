@@ -5,9 +5,6 @@ import 'package:torqueden/models/partner_page.dart';
 import 'package:torqueden/screens/partner/partner_page_screen.dart';
 import 'package:torqueden/theme.dart';
 
-/// Lighter grey panel behind the partner cards (softer than the app's carbon).
-const Color _kPartnersBg = Color(0xFF2A2F38);
-
 /// Browsable, view-only list of partner pages (Discover's Partners tab).
 /// Managing your own page happens in Settings → Partner Page. [query] filters
 /// by business name / bio.
@@ -57,9 +54,7 @@ class _PartnersViewState extends State<PartnersView> {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: _kPartnersBg,
-      child: FutureBuilder<List<PartnerPage>>(
+    return FutureBuilder<List<PartnerPage>>(
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
@@ -98,7 +93,6 @@ class _PartnersViewState extends State<PartnersView> {
                 ),
         );
       },
-      ),
     );
   }
 }
