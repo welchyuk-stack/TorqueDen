@@ -2,12 +2,8 @@
 -- TorqueDen — live database schema (public schema only), pg_dump snapshot.
 -- Recreate with: psql "<conn>" -f supabase/schema.sql
 --
--- Applied migrations (supabase/migrations/):
---   0001_car_location · 0002_merge_mods_into_build · 0003_post_link_to_mod
---   0004_fuzz_car_locations · 0005_clubs · 0006_club_admin · 0007_reports_blocks
---   0008_club_pins_rules_archive · 0009_club_admins_bans · 0010_club_reply_votes
---   0011_club_reply_parent · 0012_club_moderation3 (slow mode, word filter,
---   timed mutes, mod log)
+-- Applied migrations (supabase/migrations/): 0001–0013.
+--   …0012_club_moderation3 · 0013_club_banner (club header banner image)
 --
 -- Not included: table data; the auth.users trigger for handle_new_user()
 -- (recreate: CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
@@ -18,7 +14,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict xtlaYrg5QdpRzTkjTp2RhcWKccYNPhUC1yud4cbAkIw3EncCdjjFdj4loo99kzA
+\restrict tGWpfRPx9sa1WUvkRJ79KK05g6AqvTgcM44l7ks5Xui6uNy0fpnclM7vaGDXrIp
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -371,7 +367,8 @@ CREATE TABLE public.clubs (
     rules text,
     is_archived boolean DEFAULT false NOT NULL,
     slow_mode_seconds integer DEFAULT 0 NOT NULL,
-    blocked_words text[] DEFAULT '{}'::text[] NOT NULL
+    blocked_words text[] DEFAULT '{}'::text[] NOT NULL,
+    banner_url text
 );
 
 
@@ -1961,5 +1958,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict xtlaYrg5QdpRzTkjTp2RhcWKccYNPhUC1yud4cbAkIw3EncCdjjFdj4loo99kzA
+\unrestrict tGWpfRPx9sa1WUvkRJ79KK05g6AqvTgcM44l7ks5Xui6uNy0fpnclM7vaGDXrIp
 

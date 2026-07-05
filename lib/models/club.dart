@@ -5,6 +5,7 @@ class Club {
     required this.name,
     this.description,
     this.avatarUrl,
+    this.bannerUrl,
     required this.ownerId,
     required this.createdAt,
     this.isLocked = false,
@@ -19,6 +20,7 @@ class Club {
   final String name;
   final String? description;
   final String? avatarUrl;
+  final String? bannerUrl;
   final String ownerId;
   final DateTime createdAt;
   final bool isLocked;
@@ -31,6 +33,7 @@ class Club {
   final int memberCount;
 
   bool get hasAvatar => avatarUrl != null && avatarUrl!.trim().isNotEmpty;
+  bool get hasBanner => bannerUrl != null && bannerUrl!.trim().isNotEmpty;
 
   /// Reads a count out of an embedded `club_members(count)` aggregate.
   static int _embeddedCount(dynamic embedded) {
@@ -47,6 +50,7 @@ class Club {
       name: map['name'] as String,
       description: map['description'] as String?,
       avatarUrl: map['avatar_url'] as String?,
+      bannerUrl: map['banner_url'] as String?,
       ownerId: map['owner_id'] as String,
       createdAt: DateTime.parse(map['created_at'] as String),
       isLocked: (map['is_locked'] as bool?) ?? false,

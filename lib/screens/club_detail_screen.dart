@@ -31,7 +31,9 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
   bool _member = false;
   bool _isAdmin = false;
   int _memberCount = 0;
+  int _online = 0;
   bool _joining = false;
+  RealtimeChannel? _presence;
 
   String? get _uid => _client.auth.currentUser?.id;
   bool get _isOwner => _uid != null && _uid == _club.ownerId;
@@ -44,6 +46,37 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
     _club = widget.club;
     _memberCount = _club.memberCount;
     _future = _load();
+    _joinPresence();
+  }
+
+  @override
+  void dispose() {
+    final ch = _presence;
+    if (ch != null) _client.removeChannel(ch);
+    super.dispose();
+  }
+
+  /// Live "online" count for this club via Realtime presence — members
+  /// currently viewing the club are tracked on a shared channel.
+  void _joinPresence() {
+    final uid = _uid;
+    if (uid == null) return;
+    final ch = _client.channel('club-presence-${_club.id}');
+    ch.onPresenceSync((_) {
+      final ids = <String>{};
+      for (final state in ch.presenceState()) {
+        for (final p in state.presences) {
+          final u = p.payload['user_id'];
+          if (u is String) ids.add(u);
+        }
+      }
+      if (mounted) setState(() => _online = ids.length);
+    }).subscribe((status, _) async {
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        await ch.track({'user_id': uid});
+      }
+    });
+    _presence = ch;
   }
 
   Future<List<ClubThread>> _load() async {
@@ -140,6 +173,44 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
     }
   }
 
+  void _showRules() {
+    final rules = _club.rules?.trim() ?? '';
+    if (rules.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.graphite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.gavel_outlined, size: 18, color: AppColors.ember),
+                  const SizedBox(width: 8),
+                  Text('Club Rules',
+                      style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Text(rules,
+                      style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.5)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _moderateThread(ClubThread thread) {
     showModerationSheet(
       context,
@@ -167,17 +238,6 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_club.name),
-        actions: [
-          if (_isOwner)
-            IconButton(
-              onPressed: _manage,
-              icon: const Icon(Icons.tune),
-              tooltip: 'Manage club',
-            ),
-        ],
-      ),
       floatingActionButton: _canPost
           ? FloatingActionButton.extended(
               onPressed: _ask,
@@ -187,169 +247,298 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
               label: const Text('Ask'),
             )
           : null,
-      body: SafeArea(
-        child: FutureBuilder<List<ClubThread>>(
-          future: _future,
-          builder: (context, snapshot) {
-            final loading = snapshot.connectionState == ConnectionState.waiting;
-            final threads = snapshot.data ?? const <ClubThread>[];
-            return RefreshIndicator(
-              color: AppColors.ember,
-              backgroundColor: AppColors.graphite,
-              onRefresh: _refresh,
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                children: [
-                  _header(),
-                  const SizedBox(height: 8),
-                  const Divider(color: AppColors.hairline),
-                  const SizedBox(height: 8),
-                  if (loading)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 60),
-                      child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
-                    )
-                  else if (snapshot.hasError)
-                    EmptyState(
-                      icon: Icons.error_outline,
-                      title: 'Could not load threads',
-                      message: '${snapshot.error}',
-                      action: FilledButton(onPressed: _refresh, child: const Text('Try again')),
-                    )
-                  else if (threads.isEmpty)
-                    EmptyState(
-                      icon: Icons.forum_outlined,
-                      title: 'No threads yet',
-                      message: _canPost
-                          ? 'Start the first discussion with the Ask button.'
-                          : _club.isLocked
-                              ? 'This club is locked — posting is closed.'
-                              : 'Join the club to start a discussion.',
-                    )
-                  else
-                    for (final t in threads) ...[
-                      _ThreadRow(
-                        thread: t,
-                        canDelete: _isMod || t.authorId == _uid,
-                        onTap: () => _openThread(t),
-                        onDelete: () => _deleteThread(t),
-                        onMore: () => _moderateThread(t),
-                      ),
-                      const SizedBox(height: 10),
+      body: FutureBuilder<List<ClubThread>>(
+        future: _future,
+        builder: (context, snapshot) {
+          final loading = snapshot.connectionState == ConnectionState.waiting;
+          final threads = snapshot.data ?? const <ClubThread>[];
+          final desc = _club.description?.trim() ?? '';
+          return RefreshIndicator(
+            color: AppColors.ember,
+            backgroundColor: AppColors.graphite,
+            onRefresh: _refresh,
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 96),
+              children: [
+                _banner(context),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (desc.isNotEmpty) ...[
+                        Text(desc,
+                            style: GoogleFonts.inter(
+                                fontSize: 15, color: AppColors.textSecondary, height: 1.45)),
+                        const SizedBox(height: 16),
+                      ],
+                      if (loading)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 60),
+                          child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
+                        )
+                      else if (snapshot.hasError)
+                        EmptyState(
+                          icon: Icons.error_outline,
+                          title: 'Could not load threads',
+                          message: '${snapshot.error}',
+                          action: FilledButton(onPressed: _refresh, child: const Text('Try again')),
+                        )
+                      else if (threads.isEmpty)
+                        EmptyState(
+                          icon: Icons.forum_outlined,
+                          title: 'No threads yet',
+                          message: _canPost
+                              ? 'Start the first discussion with the Ask button.'
+                              : _club.isLocked
+                                  ? 'This club is locked — posting is closed.'
+                                  : 'Join the club to start a discussion.',
+                        )
+                      else
+                        for (final t in threads) ...[
+                          _ThreadRow(
+                            thread: t,
+                            canDelete: _isMod || t.authorId == _uid,
+                            onTap: () => _openThread(t),
+                            onDelete: () => _deleteThread(t),
+                            onMore: () => _moderateThread(t),
+                          ),
+                          const SizedBox(height: 10),
+                        ],
                     ],
-                ],
-              ),
-            );
-          },
-        ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _header() {
-    final desc = _club.description?.trim() ?? '';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                _club.name,
-                style: GoogleFonts.archivo(fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.cream),
+  /// The club header: a banner image (top 25%) with the name + rules up top and
+  /// member/online + join control along the bottom.
+  Widget _banner(BuildContext context) {
+    final topPad = MediaQuery.paddingOf(context).top;
+    final height = MediaQuery.sizeOf(context).height * 0.25 + topPad;
+    final online = _online > 0
+        ? '  ·  ${_online == 1 ? '1 online' : '$_online online'}'
+        : '';
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_club.hasBanner)
+            Image.network(_club.bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const _BannerFallback())
+          else
+            const _BannerFallback(),
+          // Legibility scrim, darker top and bottom.
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.black54, Colors.transparent, Colors.black87],
+                stops: [0.0, 0.45, 1.0],
               ),
             ),
-            if (_club.isLocked) ...[
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: AppColors.graphiteRaised,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppColors.hairline),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(10, topPad + 6, 12, 12),
+            child: Column(
+              children: [
+                // Top: back · name (left)  ·  rules · manage (right)
+                Row(
                   children: [
-                    const Icon(Icons.lock, size: 13, color: AppColors.steel),
-                    const SizedBox(width: 5),
-                    Text('Locked',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.steel)),
+                    _CircleBtn(icon: Icons.arrow_back, onTap: () => Navigator.of(context).pop()),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        _club.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.archivo(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.cream,
+                          shadows: const [Shadow(color: Colors.black87, blurRadius: 8)],
+                        ),
+                      ),
+                    ),
+                    if (_club.rules?.trim().isNotEmpty == true) ...[
+                      const SizedBox(width: 6),
+                      _RulesButton(onTap: _showRules),
+                    ],
+                    if (_isOwner) ...[
+                      const SizedBox(width: 6),
+                      _CircleBtn(icon: Icons.tune, onTap: _manage),
+                    ],
                   ],
                 ),
-              ),
-            ],
-            if (_club.isArchived) ...[
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: AppColors.graphiteRaised,
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: AppColors.hairline),
+                const Spacer(),
+                // Bottom: members · online (left)  ·  join / owner (right)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          if (_club.isLocked) const _MiniChip(icon: Icons.lock, label: 'Locked'),
+                          if (_club.isArchived) const _MiniChip(icon: Icons.inventory_2_outlined, label: 'Archived'),
+                          Flexible(
+                            child: Text(
+                              '$_memberCount ${_memberCount == 1 ? 'member' : 'members'}$online',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.cream,
+                                shadows: const [Shadow(color: Colors.black87, blurRadius: 6)],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _joinControl(),
+                  ],
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.inventory_2_outlined, size: 13, color: AppColors.steel),
-                  const SizedBox(width: 5),
-                  Text('Archived',
-                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.steel)),
-                ]),
-              ),
-            ],
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '$_memberCount ${_memberCount == 1 ? 'member' : 'members'}',
-          style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted, fontWeight: FontWeight.w600),
-        ),
-        if (desc.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text(desc, style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.45)),
-        ],
-        if (_club.rules?.trim().isNotEmpty == true) ...[
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.graphite,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.hairline),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('RULES',
-                    style: GoogleFonts.inter(
-                        fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.8, color: AppColors.ember)),
-                const SizedBox(height: 6),
-                Text(_club.rules!.trim(),
-                    style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.45)),
               ],
             ),
           ),
         ],
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: _member
-              ? OutlinedButton(
-                  onPressed: _joining ? null : _toggleMembership,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.steel,
-                    side: const BorderSide(color: AppColors.hairline),
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                  ),
-                  child: Text(_isOwner ? 'Owner' : 'Leave club'),
-                )
-              : FilledButton(
-                  onPressed: _joining ? null : _toggleMembership,
-                  child: const Text('Join club'),
-                ),
+      ),
+    );
+  }
+
+  Widget _joinControl() {
+    if (_isOwner) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(999),
         ),
-      ],
+        child: Text('Owner',
+            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.cream)),
+      );
+    }
+    if (_member) {
+      return TextButton(
+        onPressed: _joining ? null : _toggleMembership,
+        style: TextButton.styleFrom(
+          backgroundColor: Colors.black.withValues(alpha: 0.45),
+          foregroundColor: AppColors.cream,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          textStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        child: const Text('Leave'),
+      );
+    }
+    return FilledButton(
+      onPressed: _joining ? null : _toggleMembership,
+      style: FilledButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
+      ),
+      child: const Text('Join'),
+    );
+  }
+}
+
+/// Fallback banner background (ember-tinted gradient) when no image is set.
+class _BannerFallback extends StatelessWidget {
+  const _BannerFallback();
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF2A2016), AppColors.carbon],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small translucent circular icon button used over the banner.
+class _CircleBtn extends StatelessWidget {
+  const _CircleBtn({required this.icon, required this.onTap});
+  final IconData icon;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.4),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Icon(icon, size: 20, color: AppColors.cream),
+        ),
+      ),
+    );
+  }
+}
+
+/// Small status chip (Locked / Archived) shown over the banner.
+class _MiniChip extends StatelessWidget {
+  const _MiniChip({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 12, color: AppColors.cream),
+        const SizedBox(width: 4),
+        Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.cream)),
+      ]),
+    );
+  }
+}
+
+/// A small pill button that opens the club rules.
+class _RulesButton extends StatelessWidget {
+  const _RulesButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: AppColors.ember.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.ember.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.gavel_outlined, size: 13, color: AppColors.ember),
+            const SizedBox(width: 5),
+            Text('Club Rules',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.ember)),
+          ],
+        ),
+      ),
     );
   }
 }

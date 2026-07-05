@@ -289,6 +289,39 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     }
   }
 
+  Future<void> _changeBanner() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+    setState(() { _uploading = true; });
+    try {
+      final uid = _client.auth.currentUser!.id;
+      final Uint8List bytes = await picked.readAsBytes();
+      final ext = picked.name.contains('.') ? picked.name.split('.').last.toLowerCase() : 'jpg';
+      final path = '$uid/club_banner_${_club.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await _client.storage.from(kCarPhotosBucket).uploadBinary(
+            path,
+            bytes,
+            fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'),
+          );
+      final url = _client.storage.from(kCarPhotosBucket).getPublicUrl(path);
+      final rows = await _client
+          .from('clubs')
+          .update({'banner_url': url})
+          .eq('id', _club.id)
+          .select('*, club_members(count)');
+      _club = Club.fromMap(rows.first);
+      _snack('Banner updated');
+    } catch (e) {
+      _snack('Could not upload banner: $e');
+    } finally {
+      if (mounted) setState(() { _uploading = false; });
+    }
+  }
+
   Future<void> _toggleLock(bool locked) async {
     final prev = _club.isLocked;
     setState(() { _club = _copyWith(isLocked: locked); });
@@ -398,6 +431,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
         name: _club.name,
         description: _club.description,
         avatarUrl: _club.avatarUrl,
+        bannerUrl: _club.bannerUrl,
         ownerId: _club.ownerId,
         createdAt: _club.createdAt,
         isLocked: isLocked ?? _club.isLocked,
@@ -421,7 +455,40 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
           child: ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              // Club picture
+              // Banner
+              GestureDetector(
+                onTap: _uploading ? null : _changeBanner,
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (_club.hasBanner)
+                          Image.network(_club.bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const _BannerPlaceholder())
+                        else
+                          const _BannerPlaceholder(),
+                        Positioned(
+                          right: 10,
+                          bottom: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.55),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(_club.hasBanner ? 'Change banner' : 'Add banner',
+                                style: GoogleFonts.inter(color: AppColors.cream, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Club icon (shown in lists)
               Row(
                 children: [
                   _Avatar(club: _club),
@@ -817,6 +884,27 @@ class _MemberRow extends StatelessWidget {
                 const PopupMenuItem(value: 'ban', child: Text('Ban from club')),
               ],
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BannerPlaceholder extends StatelessWidget {
+  const _BannerPlaceholder();
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: AppColors.graphiteRaised,
+        border: Border.all(color: AppColors.hairline),
+      ),
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.image_outlined, size: 30, color: AppColors.steel),
+          SizedBox(height: 6),
+          Text('Club banner', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
         ],
       ),
     );
