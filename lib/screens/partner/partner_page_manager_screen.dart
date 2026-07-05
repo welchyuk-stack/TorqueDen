@@ -119,9 +119,9 @@ class _PartnerPageManagerScreenState extends State<PartnerPageManagerScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               AspectRatio(
-                aspectRatio: 16 / 7,
+                aspectRatio: kBannerAspect,
                 child: page.hasBanner
-                    ? Image.network(page.bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => _fallback())
+                    ? Image.network(page.bannerUrl!, fit: BoxFit.contain, errorBuilder: (_, _, _) => _fallback())
                     : _fallback(),
               ),
               Padding(

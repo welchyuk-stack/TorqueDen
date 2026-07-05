@@ -1,3 +1,8 @@
+/// Aspect ratio for partner banners — a wide strip, used everywhere the banner
+/// appears (framer, edit preview, partner page, and the directory card) so the
+/// whole banner shows without cropping.
+const double kBannerAspect = 16 / 4.5;
+
 /// A partner's public page. Mirrors the `partner_pages` table.
 class PartnerPage {
   const PartnerPage({

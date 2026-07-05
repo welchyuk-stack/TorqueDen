@@ -136,16 +136,16 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
               GestureDetector(
                 onTap: _saving ? null : _pickBanner,
                 child: AspectRatio(
-                  aspectRatio: 16 / 9,
+                  aspectRatio: kBannerAspect,
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
                         if (_bannerBytes != null)
-                          Image.memory(_bannerBytes!, fit: BoxFit.cover)
+                          Image.memory(_bannerBytes!, fit: BoxFit.contain)
                         else if (_bannerUrl?.isNotEmpty ?? false)
-                          Image.network(_bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const _BannerHint())
+                          Image.network(_bannerUrl!, fit: BoxFit.contain, errorBuilder: (_, _, _) => const _BannerHint())
                         else
                           const _BannerHint(),
                         if (hasBanner)

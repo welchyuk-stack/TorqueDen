@@ -50,9 +50,9 @@ class _PartnerPageScreenState extends State<PartnerPageScreen> {
           padding: EdgeInsets.zero,
           children: [
             AspectRatio(
-              aspectRatio: 16 / 9,
+              aspectRatio: kBannerAspect,
               child: _page.hasBanner
-                  ? Image.network(_page.bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const _BannerFallback())
+                  ? Image.network(_page.bannerUrl!, fit: BoxFit.contain, errorBuilder: (_, _, _) => const _BannerFallback())
                   : const _BannerFallback(),
             ),
             Padding(

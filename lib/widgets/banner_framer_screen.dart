@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image/image.dart' as img;
+import 'package:torqueden/models/partner_page.dart' show kBannerAspect;
 import 'package:torqueden/theme.dart';
 
 /// Background choices for "Fit" mode (logos often need white or black).
@@ -20,7 +21,7 @@ Uint8List _renderBanner(Map<String, dynamic> job) {
   final fill = job['fill'] as bool;
   final decoded = img.decodeImage(src);
   if (decoded == null) return src;
-  const w = 1600, h = 900;
+  const w = 1600, h = 450; // 16:4.5 wide banner (matches kBannerAspect)
   final canvas = img.Image(width: w, height: h);
   img.fill(canvas, color: img.ColorRgb8(job['r'] as int, job['g'] as int, job['b'] as int));
   final scale = fill
@@ -92,7 +93,7 @@ class _BannerFramerScreenState extends State<BannerFramerScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: AspectRatio(
-                aspectRatio: 16 / 9,
+                aspectRatio: kBannerAspect,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: Container(
