@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/partner_page.dart';
 import 'package:torqueden/screens/add_car_screen.dart' show kCarPhotosBucket;
 import 'package:torqueden/theme.dart';
-import 'package:torqueden/widgets/image_crop_screen.dart';
+import 'package:torqueden/widgets/banner_framer_screen.dart';
 
 /// Create or edit the current partner's page. Pops the saved [PartnerPage].
 class EditPartnerPageScreen extends StatefulWidget {
@@ -66,10 +66,10 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
     if (picked == null) return;
     final raw = await picked.readAsBytes();
     if (!mounted) return;
-    final cropped = await Navigator.of(context).push<Uint8List>(
-      MaterialPageRoute(builder: (_) => ImageCropScreen(bytes: raw, aspectRatio: 16 / 9, title: 'Frame your banner')),
+    final framed = await Navigator.of(context).push<Uint8List>(
+      MaterialPageRoute(builder: (_) => BannerFramerScreen(bytes: raw)),
     );
-    if (cropped != null && mounted) setState(() => _bannerBytes = cropped);
+    if (framed != null && mounted) setState(() => _bannerBytes = framed);
   }
 
   /// Normalises a typed website into a launchable https URL.
