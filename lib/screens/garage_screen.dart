@@ -86,11 +86,14 @@ class _GarageScreenState extends State<GarageScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Garage'),
+        title: const Padding(
+          padding: EdgeInsets.only(left: 6),
+          child: Text('Garage', style: TextStyle(fontSize: 22)),
+        ),
         actions: [
           IconButton(
             onPressed: _openAddCar,
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add, size: 25.2),
             tooltip: 'Add a car',
           ),
           const SettingsButton(),

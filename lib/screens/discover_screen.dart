@@ -154,7 +154,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Discover'),
+        title: const Padding(
+          padding: EdgeInsets.only(left: 6),
+          child: Text('Discover', style: TextStyle(fontSize: 22)),
+        ),
         actions: const [SettingsButton()],
       ),
       body: SafeArea(

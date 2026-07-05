@@ -1,11 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
-import 'package:torqueden/services/location_service.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/link_guard.dart';
 
@@ -44,14 +42,7 @@ class _AddCarScreenState extends State<AddCarScreen> {
   Uint8List? _pickedBytes;
   String? _pickedName;
 
-  // Location state — where this car is based (optional).
-  double? _lat;
-  double? _lng;
-  String? _locationLabel;
-  bool _locating = false;
-
   bool get _isEditing => widget.car != null;
-  bool get _hasLocation => _lat != null && _lng != null;
 
   @override
   void initState() {
@@ -65,9 +56,6 @@ class _AddCarScreenState extends State<AddCarScreen> {
       _nickname.text = car.nickname ?? '';
       _color.text = car.color ?? '';
       _description.text = car.description ?? '';
-      _lat = car.latitude;
-      _lng = car.longitude;
-      _locationLabel = car.locationName;
     }
   }
 
@@ -123,33 +111,6 @@ class _AddCarScreenState extends State<AddCarScreen> {
     return client.storage.from(kCarPhotosBucket).getPublicUrl(path);
   }
 
-  Future<void> _useCurrentLocation() async {
-    setState(() => _locating = true);
-    try {
-      final place = await LocationService.currentPlace();
-      if (!mounted) return;
-      setState(() {
-        _lat = place.latitude;
-        _lng = place.longitude;
-        _locationLabel = place.label;
-      });
-    } on LocationException catch (e) {
-      _notify(e.message);
-    } catch (e) {
-      _notify('Could not get your location: $e');
-    } finally {
-      if (mounted) setState(() => _locating = false);
-    }
-  }
-
-  void _clearLocation() {
-    setState(() {
-      _lat = null;
-      _lng = null;
-      _locationLabel = null;
-    });
-  }
-
   /// Short-lived informational snackbar (doesn't touch the saving state).
   void _notify(String message) {
     if (!mounted) return;
@@ -201,10 +162,6 @@ class _AddCarScreenState extends State<AddCarScreen> {
       // Only overwrite the photo when a new one was picked; keep the old one
       // otherwise (don't send null and wipe it on an edit).
       'photo_url': ?uploadedUrl,
-      // Location is sent as-is (including null) so clearing it persists.
-      'latitude': _lat,
-      'longitude': _lng,
-      'location_name': _locationLabel,
     };
 
     try {
@@ -306,14 +263,6 @@ class _AddCarScreenState extends State<AddCarScreen> {
                   _field(_nickname, 'Nickname (optional)', hint: 'e.g. Project Apex'),
                   const SizedBox(height: 14),
                   _field(_color, 'Colour', hint: 'e.g. Black Sapphire Metallic'),
-                  const SizedBox(height: 14),
-                  _LocationField(
-                    hasLocation: _hasLocation,
-                    label: _locationLabel,
-                    busy: _locating,
-                    onUseCurrent: _saving || _locating ? null : _useCurrentLocation,
-                    onClear: _saving || _locating ? null : _clearLocation,
-                  ),
                   const SizedBox(height: 14),
                   _field(_description, 'Notes',
                       hint: 'Anything about the build…', maxLines: 4),
@@ -421,85 +370,3 @@ class _PhotoPicker extends StatelessWidget {
   }
 }
 
-/// "Where is this car based?" — a card that captures the device location so the
-/// car can appear in nearby searches. Optional; can be cleared.
-class _LocationField extends StatelessWidget {
-  const _LocationField({
-    required this.hasLocation,
-    required this.label,
-    required this.busy,
-    required this.onUseCurrent,
-    required this.onClear,
-  });
-
-  final bool hasLocation;
-  final String? label;
-  final bool busy;
-  final VoidCallback? onUseCurrent;
-  final VoidCallback? onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.graphiteRaised,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.hairline),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            hasLocation ? Icons.location_on : Icons.location_off_outlined,
-            color: hasLocation ? AppColors.ember : AppColors.steel,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Location',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  hasLocation
-                      ? (label ?? 'Location set')
-                      : 'Add so people nearby can find it',
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    color: hasLocation ? AppColors.cream : AppColors.textMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          if (busy)
-            const SizedBox(
-              height: 20,
-              width: 20,
-              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ember),
-            )
-          else if (hasLocation)
-            IconButton(
-              tooltip: 'Clear location',
-              onPressed: onClear,
-              icon: const Icon(Icons.close, color: AppColors.steel),
-            )
-          else
-            TextButton.icon(
-              onPressed: onUseCurrent,
-              icon: const Icon(Icons.my_location, size: 18),
-              label: const Text('Use current'),
-            ),
-        ],
-      ),
-    );
-  }
-}

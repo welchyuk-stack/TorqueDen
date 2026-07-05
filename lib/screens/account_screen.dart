@@ -221,35 +221,41 @@ class _AccountScreenState extends State<AccountScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: _displayName,
-                  textCapitalization: TextCapitalization.words,
-                  style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
-                  decoration: const InputDecoration(
-                    labelText: 'Display name',
-                    hintText: 'Shown on your posts (optional)',
+                _LabeledField(
+                  label: 'Display name',
+                  child: TextField(
+                    controller: _displayName,
+                    textCapitalization: TextCapitalization.words,
+                    style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                    decoration: const InputDecoration(
+                      hintText: 'Shown on your posts (optional)',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
-                TextField(
-                  controller: _username,
-                  style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
-                  decoration: const InputDecoration(
-                    labelText: 'Username',
-                    prefixText: '@',
-                    hintText: 'boostedmk7',
+                _LabeledField(
+                  label: 'Username',
+                  child: TextField(
+                    controller: _username,
+                    style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                    decoration: const InputDecoration(
+                      prefixText: '@',
+                      hintText: 'boostedmk7',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 14),
-                TextField(
-                  controller: _bio,
-                  maxLines: 4,
-                  maxLength: 200,
-                  textCapitalization: TextCapitalization.sentences,
-                  style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
-                  decoration: const InputDecoration(
-                    labelText: 'Bio',
-                    hintText: 'A line about you and your builds.',
+                _LabeledField(
+                  label: 'Bio',
+                  child: TextField(
+                    controller: _bio,
+                    maxLines: 4,
+                    maxLength: 200,
+                    textCapitalization: TextCapitalization.sentences,
+                    style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                    decoration: const InputDecoration(
+                      hintText: 'A line about you and your builds.',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -499,6 +505,36 @@ class _PasswordDialogState extends State<_PasswordDialog> {
           onPressed: _submit,
           child: Text('Update', style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),
         ),
+      ],
+    );
+  }
+}
+
+/// A form field with its label sitting as a caption *above* the field (rather
+/// than as a floating in-border label, which reads cramped on filled fields).
+class _LabeledField extends StatelessWidget {
+  const _LabeledField({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 6),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.ember,
+            ),
+          ),
+        ),
+        child,
       ],
     );
   }

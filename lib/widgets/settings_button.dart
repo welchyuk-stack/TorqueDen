@@ -9,11 +9,15 @@ class SettingsButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.settings_outlined, color: AppColors.steel),
-      tooltip: 'Settings',
-      onPressed: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+    // Nudged slightly left off the edge; icon 5% larger than the default 24.
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: IconButton(
+        icon: const Icon(Icons.settings_outlined, color: AppColors.steel, size: 25.2),
+        tooltip: 'Settings',
+        onPressed: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const SettingsScreen()),
+        ),
       ),
     );
   }

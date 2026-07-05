@@ -141,7 +141,11 @@ class _FeedScreenState extends State<FeedScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Wordmark(),
+        // Nudged right a touch and sized up a little from the default 22.
+        title: const Padding(
+          padding: EdgeInsets.only(left: 6),
+          child: Wordmark(fontSize: 24),
+        ),
         actions: const [SettingsButton()],
       ),
       body: SafeArea(

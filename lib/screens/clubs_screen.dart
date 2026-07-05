@@ -127,11 +127,14 @@ class _ClubsScreenState extends State<ClubsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Clubs'),
+        title: const Padding(
+          padding: EdgeInsets.only(left: 6),
+          child: Text('Clubs', style: TextStyle(fontSize: 22)),
+        ),
         actions: [
           IconButton(
             onPressed: _create,
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add, size: 25.2),
             tooltip: 'Create a club',
           ),
           const SettingsButton(),

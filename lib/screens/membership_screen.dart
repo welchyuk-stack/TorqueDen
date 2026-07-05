@@ -136,7 +136,7 @@ class _MembershipScreenState extends State<MembershipScreen> {
                     features: const [
                       'Everything in Premium',
                       'Add your business website & profile',
-                      'Sell your products into the userbase',
+                      'Offer your products and services to the userbase',
                     ],
                   ),
                   const SizedBox(height: 16),
