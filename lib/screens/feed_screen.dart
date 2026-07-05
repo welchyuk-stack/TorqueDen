@@ -98,8 +98,7 @@ class _FeedScreenState extends State<FeedScreen> {
 
   /// One ad slot after every [_adEveryNPosts] real posts — never first, never
   /// two in a row. Each slot is filled by an AdMob ad (or collapses if unfilled).
-  // TODO: restore to 6 after preview — temporarily 2 to show ads sooner.
-  static const int _adEveryNPosts = 2;
+  static const int _adEveryNPosts = 6;
   static List<Object> _weaveAdSlots(List<_FeedItem> posts) {
     final out = <Object>[];
     var slots = 0;

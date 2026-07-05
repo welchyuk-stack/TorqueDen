@@ -20,8 +20,15 @@ class Entitlements {
   static bool get isPremium => _tier == Tier.premium || _tier == Tier.partner;
   static bool get isPartner => _tier == Tier.partner;
 
-  /// Creating clubs is a Premium feature. Open to everyone while [enforce] is off.
-  static bool get canCreateClubs => !enforce || isPremium;
+  /// Whether Premium perks apply. While [enforce] is off (pre-IAP) everyone
+  /// gets them so nobody is trapped without a way to upgrade.
+  static bool get _premiumActive => !enforce || isPremium;
+
+  /// Free-tier caps (null = unlimited). Free: 1 car, 1 created club, public only.
+  /// Premium/Partner: unlimited + private clubs.
+  static int? get carLimit => _premiumActive ? null : 1;
+  static int? get createdClubLimit => _premiumActive ? null : 1;
+  static bool get canCreatePrivateClubs => _premiumActive;
 
   /// Whether to show house ads in the feed. Ad-free is a Premium/Partner perk,
   /// but while [enforce] is off (pre-IAP) ads show to everyone — so they're

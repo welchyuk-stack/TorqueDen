@@ -8,6 +8,8 @@ import 'package:torqueden/models/club.dart';
 import 'package:torqueden/screens/add_car_screen.dart' show kCarPhotosBucket;
 import 'package:torqueden/screens/club_members_screen.dart';
 import 'package:torqueden/services/club_mod_log.dart';
+import 'package:torqueden/services/entitlements.dart';
+import 'package:torqueden/widgets/upgrade_sheet.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/time_ago.dart';
 
@@ -293,6 +295,16 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
   }
 
   Future<void> _togglePrivate(bool private) async {
+    // Making a club private is a Premium perk (turning it back public is fine).
+    if (private && !Entitlements.canCreatePrivateClubs) {
+      await showUpgradeSheet(
+        context,
+        title: 'Private clubs are Premium',
+        message: 'Upgrade to Premium to make your club private (request-to-join, '
+            'members-only posts).',
+      );
+      return;
+    }
     final prev = _club.isPrivate;
     setState(() { _club = _copyWith(isPrivate: private); });
     try {

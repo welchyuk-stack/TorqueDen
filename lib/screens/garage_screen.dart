@@ -4,9 +4,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/add_car_screen.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
+import 'package:torqueden/services/entitlements.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/settings_button.dart';
+import 'package:torqueden/widgets/upgrade_sheet.dart';
 
 /// Garage tab — the current user's cars, loaded live from Supabase.
 class GarageScreen extends StatefulWidget {
@@ -28,6 +30,7 @@ class _GarageScreenState extends State<GarageScreen> {
 
   Future<List<Car>> _loadCars() async {
     final userId = _client.auth.currentUser!.id;
+    await Entitlements.refresh(); // so the car-limit gate reflects the tier
     final rows = await _client
         .from('cars')
         .select()
@@ -47,6 +50,21 @@ class _GarageScreenState extends State<GarageScreen> {
   }
 
   Future<void> _openAddCar() async {
+    // Free tier is capped to one car; Premium is unlimited.
+    final limit = Entitlements.carLimit;
+    if (limit != null) {
+      final cars = await _carsFuture;
+      if (cars.length >= limit && mounted) {
+        await showUpgradeSheet(
+          context,
+          title: 'You\'ve reached the free garage limit',
+          message: 'Free members can add one car. Upgrade to Premium to keep '
+              'unlimited cars in your garage.',
+        );
+        return;
+      }
+    }
+    if (!mounted) return;
     final added = await Navigator.of(context).push<Car>(
       MaterialPageRoute(builder: (_) => const AddCarScreen()),
     );

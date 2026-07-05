@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/club.dart';
 import 'package:torqueden/screens/add_car_screen.dart' show kCarPhotosBucket;
+import 'package:torqueden/services/entitlements.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/widgets/upgrade_sheet.dart';
 
 /// Create a new club. Pops the created [Club] on success (the owner is added as
 /// a member automatically by a DB trigger).
@@ -258,22 +260,44 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  SwitchListTile(
-                    value: _private,
-                    onChanged: _saving ? null : (v) => setState(() => _private = v),
-                    activeThumbColor: AppColors.ember,
-                    tileColor: AppColors.graphite,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: const BorderSide(color: AppColors.hairline),
+                  if (Entitlements.canCreatePrivateClubs)
+                    SwitchListTile(
+                      value: _private,
+                      onChanged: _saving ? null : (v) => setState(() => _private = v),
+                      activeThumbColor: AppColors.ember,
+                      tileColor: AppColors.graphite,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: const BorderSide(color: AppColors.hairline),
+                      ),
+                      title: const Text('Private club',
+                          style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                      subtitle: const Text(
+                          'People must request to join, and only members see the discussions.',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                      secondary: Icon(_private ? Icons.lock : Icons.public, color: AppColors.steel),
+                    )
+                  else
+                    // Private clubs are Premium — free clubs are public.
+                    ListTile(
+                      onTap: () => showUpgradeSheet(
+                        context,
+                        title: 'Private clubs are Premium',
+                        message: 'Free clubs are public. Upgrade to Premium to create '
+                            'private, request-to-join clubs.',
+                      ),
+                      tileColor: AppColors.graphite,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: const BorderSide(color: AppColors.hairline),
+                      ),
+                      leading: const Icon(Icons.lock_outline, color: AppColors.steel),
+                      title: const Text('Private club',
+                          style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                      subtitle: const Text('Premium — tap to upgrade',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                      trailing: const Icon(Icons.workspace_premium_outlined, color: AppColors.ember),
                     ),
-                    title: const Text('Private club',
-                        style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                    subtitle: const Text(
-                        'People must request to join, and only members see the discussions.',
-                        style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                    secondary: Icon(_private ? Icons.lock : Icons.public, color: AppColors.steel),
-                  ),
                   const SizedBox(height: 16),
                   if (_saving)
                     const Center(child: CircularProgressIndicator(color: AppColors.ember))
