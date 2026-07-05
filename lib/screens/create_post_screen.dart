@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/add_car_screen.dart';
 import 'package:torqueden/screens/camera_screen.dart';
+import 'package:torqueden/screens/video_trim_screen.dart';
+import 'package:torqueden/services/video_trim_service.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 
@@ -164,17 +167,54 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
+  /// Tapping a thumbnail's edit control: photos open the image editor, videos
+  /// re-open the trimmer.
+  Future<void> _editMedia(int index) async {
+    if (_media[index].isVideo) {
+      await _retrimVideo(index);
+    } else {
+      await _editPhoto(index);
+    }
+  }
+
+  /// Re-open the trimmer on an already-attached clip. The clip is held as bytes,
+  /// so we write it to a temp file for the (path-based) trimmer, then swap the
+  /// trimmed result back in.
+  Future<void> _retrimVideo(int index) async {
+    final m = _media[index];
+    final ext = m.name.contains('.') ? m.name.split('.').last : 'mp4';
+    final tmp = File(
+        '${Directory.systemTemp.path}/retrim_${DateTime.now().microsecondsSinceEpoch}.$ext');
+    await tmp.writeAsBytes(m.bytes);
+    if (!mounted) return;
+    final trimmedPath = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => VideoTrimScreen(inputPath: tmp.path)),
+    );
+    if (trimmedPath == null || !mounted) return;
+    final bytes = await File(trimmedPath).readAsBytes();
+    final pext = trimmedPath.contains('.') ? trimmedPath.split('.').last : ext;
+    if (!mounted) return;
+    setState(() => _media[index] = (name: 'clip.$pext', bytes: bytes, isVideo: true));
+  }
+
   Future<void> _addMedia() async {
     final files = await ImagePicker().pickMultipleMedia();
     if (files.isEmpty) return;
     final added = <({String name, Uint8List bytes, bool isVideo})>[];
     for (final f in files) {
       final ext = f.name.contains('.') ? f.name.split('.').last.toLowerCase() : '';
-      added.add((
-        name: f.name,
-        bytes: await f.readAsBytes(),
-        isVideo: _videoExts.contains(ext),
-      ));
+      if (_videoExts.contains(ext)) {
+        if (!mounted) return;
+        // Offer a trim on uploaded footage, same as captured clips.
+        final trimmedPath = await Navigator.of(context).push<String>(
+          MaterialPageRoute(builder: (_) => VideoTrimScreen(inputPath: f.path)),
+        );
+        final path = trimmedPath ?? f.path;
+        final vext = path.contains('.') ? path.split('.').last.toLowerCase() : ext;
+        added.add((name: 'clip.$vext', bytes: await File(path).readAsBytes(), isVideo: true));
+      } else {
+        added.add((name: f.name, bytes: await f.readAsBytes(), isVideo: false));
+      }
     }
     if (!mounted) return;
     setState(() => _media.addAll(added));
@@ -329,7 +369,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       onRemove: _posting
                           ? null
                           : (i) => setState(() => _media.removeAt(i)),
-                      onEdit: _posting ? null : _editPhoto,
+                      onEdit: _posting ? null : _editMedia,
                     ),
                     const SizedBox(height: 18),
                     TextField(
@@ -451,7 +491,7 @@ class _MediaPicker extends StatelessWidget {
             bytes: m.bytes,
             isVideo: m.isVideo,
             onRemove: onRemove == null ? null : () => onRemove!(i),
-            onEdit: (m.isVideo || onEdit == null) ? null : () => onEdit!(i),
+            onEdit: onEdit == null ? null : () => onEdit!(i),
           );
         },
       ),
@@ -502,16 +542,10 @@ class _Thumb extends StatelessWidget {
         ClipRRect(
           borderRadius: BorderRadius.circular(12),
           child: isVideo
-              ? Container(
-                  width: 108,
-                  height: 108,
-                  color: AppColors.graphiteRaised,
-                  alignment: Alignment.center,
-                  child: const Icon(Icons.videocam, color: AppColors.steel, size: 30),
-                )
+              ? _VideoThumb(bytes: bytes, size: 108)
               : Image.memory(bytes, width: 108, height: 108, fit: BoxFit.cover),
         ),
-        if (isVideo)
+        if (isVideo && onEdit == null)
           const Positioned(
             left: 6,
             bottom: 6,
@@ -529,12 +563,13 @@ class _Thumb extends StatelessWidget {
                   color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(999),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.tune, size: 13, color: AppColors.cream),
-                    SizedBox(width: 4),
-                    Text('Edit', style: TextStyle(color: AppColors.cream, fontSize: 11)),
+                    Icon(isVideo ? Icons.content_cut : Icons.tune, size: 13, color: AppColors.cream),
+                    const SizedBox(width: 4),
+                    Text(isVideo ? 'Trim' : 'Edit',
+                        style: const TextStyle(color: AppColors.cream, fontSize: 11)),
                   ],
                 ),
               ),
@@ -557,6 +592,61 @@ class _Thumb extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// A video clip's poster-frame thumbnail. Generates a frame natively from the
+/// clip bytes (via a temp file); shows a videocam placeholder until it's ready.
+class _VideoThumb extends StatefulWidget {
+  const _VideoThumb({required this.bytes, this.size = 108});
+
+  final Uint8List bytes;
+  final double size;
+
+  @override
+  State<_VideoThumb> createState() => _VideoThumbState();
+}
+
+class _VideoThumbState extends State<_VideoThumb> {
+  Uint8List? _frame;
+
+  @override
+  void initState() {
+    super.initState();
+    _generate();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VideoThumb old) {
+    super.didUpdateWidget(old);
+    if (!identical(old.bytes, widget.bytes)) {
+      _frame = null;
+      _generate();
+    }
+  }
+
+  Future<void> _generate() async {
+    try {
+      final tmp = File(
+          '${Directory.systemTemp.path}/thumbsrc_${DateTime.now().microsecondsSinceEpoch}.mp4');
+      await tmp.writeAsBytes(widget.bytes);
+      final frame = await VideoTrimService.thumbnail(tmp.path);
+      if (mounted && frame != null) setState(() => _frame = frame);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_frame != null) {
+      return Image.memory(_frame!, width: widget.size, height: widget.size, fit: BoxFit.cover);
+    }
+    return Container(
+      width: widget.size,
+      height: widget.size,
+      color: AppColors.graphiteRaised,
+      alignment: Alignment.center,
+      child: const Icon(Icons.videocam, color: AppColors.steel, size: 30),
     );
   }
 }

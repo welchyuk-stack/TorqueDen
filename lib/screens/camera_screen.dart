@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:torqueden/screens/video_trim_screen.dart';
 import 'package:torqueden/theme.dart';
 
 /// A single captured photo or clip, returned by [CameraScreen].
@@ -180,11 +182,19 @@ class _CameraScreenState extends State<CameraScreen>
     _ring.stop();
     try {
       final x = await c.stopVideoRecording();
-      final bytes = await x.readAsBytes();
       if (!mounted) return;
       setState(() => _isRecording = false);
+      // Offer a trim before attaching; returns the (trimmed) path, or the
+      // original if the user keeps the full clip.
+      final finalPath = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => VideoTrimScreen(inputPath: x.path)),
+      );
+      final path = finalPath ?? x.path;
+      final bytes = await File(path).readAsBytes();
+      if (!mounted) return;
+      final ext = path.contains('.') ? path.split('.').last : 'mp4';
       Navigator.of(context).pop(
-        CapturedMedia(bytes: bytes, name: 'clip.${_ext(x, 'mp4')}', isVideo: true),
+        CapturedMedia(bytes: bytes, name: 'clip.$ext', isVideo: true),
       );
     } catch (e) {
       if (mounted) setState(() => _isRecording = false);
