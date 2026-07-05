@@ -306,6 +306,10 @@ class _ClubCard extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (club.isPrivate) ...[
+                        const SizedBox(width: 6),
+                        const Icon(Icons.lock, size: 14, color: AppColors.steel),
+                      ],
                       if (joined) ...[
                         const SizedBox(width: 8),
                         const _JoinedTick(),

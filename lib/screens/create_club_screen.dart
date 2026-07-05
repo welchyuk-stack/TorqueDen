@@ -20,15 +20,20 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
   final _description = TextEditingController();
+  final _rules = TextEditingController();
   bool _saving = false;
+  bool _private = false;
 
   Uint8List? _bannerBytes;
   String? _bannerName;
+  Uint8List? _iconBytes;
+  String? _iconName;
 
   @override
   void dispose() {
     _name.dispose();
     _description.dispose();
+    _rules.dispose();
     super.dispose();
   }
 
@@ -47,33 +52,65 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
     });
   }
 
+  Future<void> _pickIcon() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 600,
+      imageQuality: 85,
+    );
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _iconBytes = bytes;
+      _iconName = picked.name;
+    });
+  }
+
+  /// Uploads image bytes under a stable path and returns its public URL.
+  Future<String> _upload(SupabaseClient client, String base, Uint8List bytes, String? name) async {
+    final uid = client.auth.currentUser!.id;
+    final ext = (name ?? 'jpg').split('.').last.toLowerCase();
+    final path = '$uid/$base.$ext';
+    await client.storage.from(kCarPhotosBucket).uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(
+            contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
+            upsert: true,
+          ),
+        );
+    return client.storage.from(kCarPhotosBucket).getPublicUrl(path);
+  }
+
   Future<void> _create() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     final client = Supabase.instance.client;
     final desc = _description.text.trim();
+    final rules = _rules.text.trim();
     try {
       // owner_id defaults to auth.uid(); the trigger adds owner membership.
       final rows = await client.from('clubs').insert({
         'name': _name.text.trim(),
         'description': desc.isEmpty ? null : desc,
+        'rules': rules.isEmpty ? null : rules,
+        'is_private': _private,
       }).select('*, club_members(count)');
       var club = Club.fromMap(rows.first);
 
-      // Upload the banner (if chosen) now that we have the club id.
+      // Upload the banner / icon (if chosen) now that we have the club id.
+      final updates = <String, dynamic>{};
       if (_bannerBytes != null) {
-        final uid = client.auth.currentUser!.id;
-        final ext = (_bannerName ?? 'jpg').split('.').last.toLowerCase();
-        final path = '$uid/club_banner_${club.id}.$ext';
-        await client.storage.from(kCarPhotosBucket).uploadBinary(
-              path,
-              _bannerBytes!,
-              fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'),
-            );
-        final url = client.storage.from(kCarPhotosBucket).getPublicUrl(path);
+        updates['banner_url'] = await _upload(client, 'club_banner_${club.id}', _bannerBytes!, _bannerName);
+      }
+      if (_iconBytes != null) {
+        updates['avatar_url'] = await _upload(client, 'club_icon_${club.id}', _iconBytes!, _iconName);
+      }
+      if (updates.isNotEmpty) {
         final updated = await client
             .from('clubs')
-            .update({'banner_url': url})
+            .update(updates)
             .eq('id', club.id)
             .select('*, club_members(count)');
         club = Club.fromMap(updated.first);
@@ -143,6 +180,52 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  // Club icon — shown in search results and the clubs list.
+                  Row(
+                    children: [
+                      GestureDetector(
+                        onTap: _saving ? null : _pickIcon,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: SizedBox(
+                            width: 64,
+                            height: 64,
+                            child: _iconBytes != null
+                                ? Image.memory(_iconBytes!, fit: BoxFit.cover)
+                                : DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: AppColors.graphiteRaised,
+                                      border: Border.all(color: AppColors.hairline),
+                                    ),
+                                    child: const Icon(Icons.groups, color: AppColors.steel),
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: _saving ? null : _pickIcon,
+                              icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                              label: Text(_iconBytes != null ? 'Change icon' : 'Add club icon'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.ember,
+                                side: const BorderSide(color: AppColors.hairline),
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text('Shown in search and your clubs list.',
+                                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
                   TextFormField(
                     controller: _name,
                     textCapitalization: TextCapitalization.words,
@@ -165,7 +248,37 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
                       hintText: 'A line or two so people know what they\'re joining.',
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  TextFormField(
+                    controller: _rules,
+                    textCapitalization: TextCapitalization.sentences,
+                    maxLines: 4,
+                    maxLength: 500,
+                    decoration: const InputDecoration(
+                      labelText: 'Club rules (optional)',
+                      hintText: 'House rules shown at the top of the club.',
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.graphite,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.hairline),
+                    ),
+                    child: SwitchListTile(
+                      value: _private,
+                      onChanged: _saving ? null : (v) => setState(() => _private = v),
+                      activeThumbColor: AppColors.ember,
+                      title: const Text('Private club',
+                          style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                      subtitle: const Text(
+                          'People must request to join, and only members see the discussions.',
+                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                      secondary: Icon(_private ? Icons.lock : Icons.public, color: AppColors.steel),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   if (_saving)
                     const Center(child: CircularProgressIndicator(color: AppColors.ember))
                   else
@@ -176,7 +289,9 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
                     ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your club is public — anyone can find it and join. You\'re the owner and can remove posts.',
+                    _private
+                        ? 'Your club is private — it\'s still listed in Discover, but people must request to join and only members can see posts. You\'re the owner and can remove posts.'
+                        : 'Your club is public — anyone can find it and join. You\'re the owner and can remove posts.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],

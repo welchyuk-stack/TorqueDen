@@ -322,6 +322,18 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     }
   }
 
+  Future<void> _togglePrivate(bool private) async {
+    final prev = _club.isPrivate;
+    setState(() { _club = _copyWith(isPrivate: private); });
+    try {
+      await _client.from('clubs').update({'is_private': private}).eq('id', _club.id);
+      ClubModLog.record(_club.id, private ? 'make_private' : 'make_public');
+    } catch (e) {
+      if (mounted) setState(() { _club = _copyWith(isPrivate: prev); });
+      _snack('Could not update privacy: $e');
+    }
+  }
+
   Future<void> _toggleLock(bool locked) async {
     final prev = _club.isLocked;
     setState(() { _club = _copyWith(isLocked: locked); });
@@ -426,7 +438,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     }
   }
 
-  Club _copyWith({bool? isLocked, bool? isArchived, int? slowModeSeconds}) => Club(
+  Club _copyWith({bool? isPrivate, bool? isLocked, bool? isArchived, int? slowModeSeconds}) => Club(
         id: _club.id,
         name: _club.name,
         description: _club.description,
@@ -434,6 +446,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
         bannerUrl: _club.bannerUrl,
         ownerId: _club.ownerId,
         createdAt: _club.createdAt,
+        isPrivate: isPrivate ?? _club.isPrivate,
         isLocked: isLocked ?? _club.isLocked,
         isArchived: isArchived ?? _club.isArchived,
         rules: _club.rules,
@@ -548,6 +561,26 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                 ),
               ),
               const SizedBox(height: 8),
+
+              // Private
+              Container(
+                decoration: BoxDecoration(
+                  color: AppColors.graphite,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.hairline),
+                ),
+                child: SwitchListTile(
+                  value: _club.isPrivate,
+                  onChanged: _togglePrivate,
+                  activeThumbColor: AppColors.ember,
+                  title: Text('Private club',
+                      style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                  subtitle: Text('People request to join and only members see posts. Still listed in Discover.',
+                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                  secondary: Icon(_club.isPrivate ? Icons.lock : Icons.public, color: AppColors.steel),
+                ),
+              ),
+              const SizedBox(height: 10),
 
               // Lock
               Container(
@@ -812,6 +845,8 @@ class _LogEntry {
       'lock': 'locked the club', 'unlock': 'unlocked the club',
       'archive': 'archived the club', 'unarchive': 'unarchived the club',
       'slow_mode': 'set slow mode',
+      'make_private': 'made the club private', 'make_public': 'made the club public',
+      'approve_request': 'approved the join request of', 'deny_request': 'denied the join request of',
     };
     final who = actor ?? 'A mod';
     final verb = verbs[action] ?? action;

@@ -5,6 +5,7 @@ import 'package:torqueden/models/club.dart';
 import 'package:torqueden/models/club_thread.dart';
 import 'package:torqueden/screens/club_manage_screen.dart';
 import 'package:torqueden/screens/thread_detail_screen.dart';
+import 'package:torqueden/services/club_mod_log.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/post_error.dart';
@@ -33,6 +34,8 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
   int _memberCount = 0;
   int _online = 0;
   bool _joining = false;
+  bool _requested = false; // this user has a pending join request (private club)
+  int _pendingRequests = 0; // queue size, for mods
   RealtimeChannel? _presence;
 
   String? get _uid => _client.auth.currentUser?.id;
@@ -89,6 +92,26 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
         members.any((m) => m['user_id'] == _uid && m['role'] == 'admin');
     _memberCount = members.length;
 
+    // Private-club join state: my pending request (if any) + the mod queue size.
+    _requested = false;
+    _pendingRequests = 0;
+    if (_uid != null && _club.isPrivate) {
+      if (!_member) {
+        final req = await _client
+            .from('club_join_requests')
+            .select('id')
+            .eq('club_id', _club.id)
+            .eq('user_id', _uid!)
+            .maybeSingle();
+        _requested = req != null;
+      }
+      if (_isMod) {
+        final reqs =
+            await _client.from('club_join_requests').select('id').eq('club_id', _club.id);
+        _pendingRequests = reqs.length;
+      }
+    }
+
     final rows = await _client
         .from('club_threads')
         .select('*, author:profiles(username), club_replies(count)')
@@ -108,32 +131,86 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
     await future;
   }
 
-  Future<void> _toggleMembership() async {
+  void _snack(String m) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  /// The banner's primary control: leave if a member, otherwise join (public) or
+  /// request / cancel a request (private).
+  Future<void> _primaryAction() async {
     if (_uid == null || _joining) return;
+    if (_member) return _leave();
+    if (_club.isPrivate) return _requested ? _cancelRequest() : _requestJoin();
+    return _join();
+  }
+
+  Future<void> _join() async {
     setState(() { _joining = true; });
-    final wasMember = _member;
     try {
-      if (wasMember) {
-        await _client
-            .from('club_members')
-            .delete()
-            .eq('club_id', _club.id)
-            .eq('user_id', _uid!);
-      } else {
-        await _client.from('club_members').insert({'club_id': _club.id});
-      }
+      await _client.from('club_members').insert({'club_id': _club.id});
       if (!mounted) return;
-      setState(() {
-        _member = !wasMember;
-        _memberCount += wasMember ? -1 : 1;
-        _joining = false;
-      });
+      setState(() { _member = true; _memberCount += 1; _joining = false; });
     } catch (e) {
-      if (!mounted) return;
-      setState(() { _joining = false; });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not update membership: $e')));
+      _joinFailed(e);
     }
+  }
+
+  Future<void> _leave() async {
+    setState(() { _joining = true; });
+    try {
+      await _client.from('club_members').delete().eq('club_id', _club.id).eq('user_id', _uid!);
+      if (!mounted) return;
+      setState(() { _member = false; _memberCount -= 1; _joining = false; });
+      if (_club.isPrivate) await _refresh(); // content now hidden → show the gate
+    } catch (e) {
+      _joinFailed(e);
+    }
+  }
+
+  Future<void> _requestJoin() async {
+    setState(() { _joining = true; });
+    try {
+      await _client.from('club_join_requests').insert({'club_id': _club.id});
+      if (!mounted) return;
+      setState(() { _requested = true; _joining = false; });
+      _snack('Request sent — a club mod will review it.');
+    } catch (e) {
+      _joinFailed(e);
+    }
+  }
+
+  Future<void> _cancelRequest() async {
+    setState(() { _joining = true; });
+    try {
+      await _client
+          .from('club_join_requests')
+          .delete()
+          .eq('club_id', _club.id)
+          .eq('user_id', _uid!);
+      if (!mounted) return;
+      setState(() { _requested = false; _joining = false; });
+    } catch (e) {
+      _joinFailed(e);
+    }
+  }
+
+  void _joinFailed(Object e) {
+    if (!mounted) return;
+    setState(() { _joining = false; });
+    _snack('Something went wrong: $e');
+  }
+
+  Future<void> _openRequests() async {
+    final changed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.graphite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _RequestsSheet(clubId: _club.id),
+    );
+    if (changed == true) await _refresh();
   }
 
   Future<void> _ask() async {
@@ -244,7 +321,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
               backgroundColor: AppColors.ember,
               foregroundColor: AppColors.onEmber,
               icon: const Icon(Icons.edit_outlined),
-              label: const Text('Ask'),
+              label: const Text('Post'),
             )
           : null,
       body: FutureBuilder<List<ClubThread>>(
@@ -285,12 +362,38 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                           message: '${snapshot.error}',
                           action: FilledButton(onPressed: _refresh, child: const Text('Try again')),
                         )
+                      else if (_club.isPrivate && !_member && !_isMod)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 40),
+                          child: EmptyState(
+                            icon: Icons.lock_outline,
+                            title: 'This club is private',
+                            message: _requested
+                                ? 'Your request to join is pending. You\'ll see the discussions once a mod approves it.'
+                                : 'Only members can see the discussions here. Request to join to get in.',
+                            action: _requested
+                                ? OutlinedButton.icon(
+                                    onPressed: _joining ? null : _cancelRequest,
+                                    icon: const Icon(Icons.hourglass_top, size: 18),
+                                    label: const Text('Cancel request'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppColors.steel,
+                                      side: const BorderSide(color: AppColors.hairline),
+                                    ),
+                                  )
+                                : FilledButton.icon(
+                                    onPressed: _joining ? null : _requestJoin,
+                                    icon: const Icon(Icons.how_to_reg, size: 20),
+                                    label: const Text('Request to join'),
+                                  ),
+                          ),
+                        )
                       else if (threads.isEmpty)
                         EmptyState(
                           icon: Icons.forum_outlined,
                           title: 'No threads yet',
                           message: _canPost
-                              ? 'Start the first discussion with the Ask button.'
+                              ? 'Start the first discussion with the Post button.'
                               : _club.isLocked
                                   ? 'This club is locked — posting is closed.'
                                   : 'Join the club to start a discussion.',
@@ -372,6 +475,10 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                       const SizedBox(width: 6),
                       _RulesButton(onTap: _showRules),
                     ],
+                    if (_isMod && _club.isPrivate) ...[
+                      const SizedBox(width: 6),
+                      _CircleBtn(icon: Icons.how_to_reg, onTap: _openRequests, badge: _pendingRequests),
+                    ],
                     if (_isOwner) ...[
                       const SizedBox(width: 6),
                       _CircleBtn(icon: Icons.tune, onTap: _manage),
@@ -429,7 +536,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
     }
     if (_member) {
       return TextButton(
-        onPressed: _joining ? null : _toggleMembership,
+        onPressed: _joining ? null : _leave,
         style: TextButton.styleFrom(
           backgroundColor: Colors.black.withValues(alpha: 0.45),
           foregroundColor: AppColors.cream,
@@ -439,13 +546,27 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
         child: const Text('Leave'),
       );
     }
+    // Private club, request already pending: show a "Requested" pill that cancels.
+    if (_club.isPrivate && _requested) {
+      return TextButton.icon(
+        onPressed: _joining ? null : _cancelRequest,
+        style: TextButton.styleFrom(
+          backgroundColor: Colors.black.withValues(alpha: 0.45),
+          foregroundColor: AppColors.cream,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          textStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+        ),
+        icon: const Icon(Icons.hourglass_top, size: 15),
+        label: const Text('Requested'),
+      );
+    }
     return FilledButton(
-      onPressed: _joining ? null : _toggleMembership,
+      onPressed: _joining ? null : _primaryAction,
       style: FilledButton.styleFrom(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         textStyle: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600),
       ),
-      child: const Text('Join'),
+      child: Text(_club.isPrivate ? 'Request' : 'Join'),
     );
   }
 }
@@ -467,14 +588,16 @@ class _BannerFallback extends StatelessWidget {
   }
 }
 
-/// Small translucent circular icon button used over the banner.
+/// Small translucent circular icon button used over the banner, with an
+/// optional count badge (e.g. pending join requests).
 class _CircleBtn extends StatelessWidget {
-  const _CircleBtn({required this.icon, required this.onTap});
+  const _CircleBtn({required this.icon, required this.onTap, this.badge = 0});
   final IconData icon;
   final VoidCallback onTap;
+  final int badge;
   @override
   Widget build(BuildContext context) {
-    return Material(
+    final btn = Material(
       color: Colors.black.withValues(alpha: 0.4),
       shape: const CircleBorder(),
       child: InkWell(
@@ -485,6 +608,31 @@ class _CircleBtn extends StatelessWidget {
           child: Icon(icon, size: 20, color: AppColors.cream),
         ),
       ),
+    );
+    if (badge <= 0) return btn;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        btn,
+        Positioned(
+          right: -2,
+          top: -2,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+            constraints: const BoxConstraints(minWidth: 18),
+            decoration: BoxDecoration(
+              color: AppColors.ember,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.black, width: 1.5),
+            ),
+            child: Text(
+              badge > 99 ? '99+' : '$badge',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.onEmber),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -701,6 +849,188 @@ class _AskSheetState extends State<_AskSheet> {
                 const Center(child: CircularProgressIndicator(color: AppColors.ember))
               else
                 FilledButton(onPressed: _post, child: const Text('Post thread')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Mod-only queue of pending join requests for a private club. Pops `true` if
+/// anything was approved or denied (so the club refreshes).
+class _RequestsSheet extends StatefulWidget {
+  const _RequestsSheet({required this.clubId});
+  final String clubId;
+
+  @override
+  State<_RequestsSheet> createState() => _RequestsSheetState();
+}
+
+class _JoinRequest {
+  const _JoinRequest({required this.id, required this.userId, this.username, required this.createdAt});
+  final String id;
+  final String userId;
+  final String? username;
+  final DateTime createdAt;
+}
+
+class _RequestsSheetState extends State<_RequestsSheet> {
+  final _client = Supabase.instance.client;
+  late Future<List<_JoinRequest>> _future;
+  final _busy = <String>{}; // request ids currently being acted on
+  bool _changed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<List<_JoinRequest>> _load() async {
+    final rows = await _client
+        .from('club_join_requests')
+        .select('id, user_id, created_at, profiles(username)')
+        .eq('club_id', widget.clubId)
+        .order('created_at');
+    return rows.map((r) {
+      final p = r['profiles'];
+      return _JoinRequest(
+        id: r['id'] as String,
+        userId: r['user_id'] as String,
+        username: p is Map ? p['username'] as String? : null,
+        createdAt: DateTime.parse(r['created_at'] as String),
+      );
+    }).toList();
+  }
+
+  void _snack(String m) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  Future<void> _approve(_JoinRequest r) async {
+    setState(() => _busy.add(r.id));
+    try {
+      await _client.rpc('approve_join_request', params: {'req': r.id});
+      ClubModLog.record(widget.clubId, 'approve_request', targetUserId: r.userId);
+      _changed = true;
+      if (mounted) setState(() { _busy.remove(r.id); _future = _load(); });
+    } catch (e) {
+      if (mounted) setState(() => _busy.remove(r.id));
+      _snack('Could not approve: $e');
+    }
+  }
+
+  Future<void> _deny(_JoinRequest r) async {
+    setState(() => _busy.add(r.id));
+    try {
+      await _client.from('club_join_requests').delete().eq('id', r.id);
+      ClubModLog.record(widget.clubId, 'deny_request', targetUserId: r.userId);
+      _changed = true;
+      if (mounted) setState(() { _busy.remove(r.id); _future = _load(); });
+    } catch (e) {
+      if (mounted) setState(() => _busy.remove(r.id));
+      _snack('Could not deny: $e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) Navigator.of(context).pop(_changed);
+        },
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.how_to_reg, size: 20, color: AppColors.ember),
+                  const SizedBox(width: 8),
+                  Text('Join requests',
+                      style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Flexible(
+                child: FutureBuilder<List<_JoinRequest>>(
+                  future: _future,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 28),
+                        child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
+                      );
+                    }
+                    final requests = snapshot.data ?? const <_JoinRequest>[];
+                    if (requests.isEmpty) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Text('No pending requests.',
+                            style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary)),
+                      );
+                    }
+                    return ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: requests.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 4),
+                      itemBuilder: (_, i) {
+                        final r = requests[i];
+                        final busy = _busy.contains(r.id);
+                        final name = r.username ?? 'Member';
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36, height: 36,
+                                decoration: const BoxDecoration(color: AppColors.graphiteRaised, shape: BoxShape.circle),
+                                alignment: Alignment.center,
+                                child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                    style: GoogleFonts.inter(color: AppColors.steel, fontWeight: FontWeight.w700)),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(name, style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15)),
+                                    Text('Requested ${timeAgo(r.createdAt)}',
+                                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12)),
+                                  ],
+                                ),
+                              ),
+                              if (busy)
+                                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ember))
+                              else ...[
+                                IconButton(
+                                  onPressed: () => _deny(r),
+                                  icon: const Icon(Icons.close, size: 22),
+                                  color: AppColors.steel,
+                                  tooltip: 'Deny',
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                IconButton(
+                                  onPressed: () => _approve(r),
+                                  icon: const Icon(Icons.check_circle, size: 24),
+                                  color: AppColors.ember,
+                                  tooltip: 'Approve',
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         ),

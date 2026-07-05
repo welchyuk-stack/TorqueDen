@@ -8,6 +8,7 @@ class Club {
     this.bannerUrl,
     required this.ownerId,
     required this.createdAt,
+    this.isPrivate = false,
     this.isLocked = false,
     this.isArchived = false,
     this.rules,
@@ -23,6 +24,7 @@ class Club {
   final String? bannerUrl;
   final String ownerId;
   final DateTime createdAt;
+  final bool isPrivate;
   final bool isLocked;
   final bool isArchived;
   final String? rules;
@@ -53,6 +55,7 @@ class Club {
       bannerUrl: map['banner_url'] as String?,
       ownerId: map['owner_id'] as String,
       createdAt: DateTime.parse(map['created_at'] as String),
+      isPrivate: (map['is_private'] as bool?) ?? false,
       isLocked: (map['is_locked'] as bool?) ?? false,
       isArchived: (map['is_archived'] as bool?) ?? false,
       rules: map['rules'] as String?,
