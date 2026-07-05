@@ -115,7 +115,7 @@ class _PartnerCard extends StatelessWidget {
             AspectRatio(
               aspectRatio: kBannerAspect,
               child: page.hasBanner
-                  ? Image.network(page.bannerUrl!, fit: BoxFit.contain, errorBuilder: (_, _, _) => _fallback())
+                  ? Image.network(page.bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => _fallback())
                   : _fallback(),
             ),
             Padding(

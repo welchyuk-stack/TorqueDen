@@ -143,9 +143,9 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
                       fit: StackFit.expand,
                       children: [
                         if (_bannerBytes != null)
-                          Image.memory(_bannerBytes!, fit: BoxFit.contain)
+                          Image.memory(_bannerBytes!, fit: BoxFit.cover)
                         else if (_bannerUrl?.isNotEmpty ?? false)
-                          Image.network(_bannerUrl!, fit: BoxFit.contain, errorBuilder: (_, _, _) => const _BannerHint())
+                          Image.network(_bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const _BannerHint())
                         else
                           const _BannerHint(),
                         if (hasBanner)
