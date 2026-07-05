@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:torqueden/policies/policy_documents.dart';
-import 'package:torqueden/screens/data_policies_screen.dart';
+import 'package:torqueden/support_links.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/open_link.dart';
 import 'package:torqueden/widgets/wordmark.dart';
 
 /// Deep-link the password-reset email points back to. Must be added to
@@ -89,10 +89,6 @@ class _AuthScreenState extends State<AuthScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
-  }
-
-  void _openDoc(PolicyDoc doc) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => PolicyScreen(doc: doc)));
   }
 
   void _showMessage(String text) {
@@ -201,7 +197,10 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                     if (!_isLogin) ...[
                       const SizedBox(height: 14),
-                      _ConsentLine(onTerms: () => _openDoc(kTermsOfService), onPrivacy: () => _openDoc(kPrivacyPolicy)),
+                      _ConsentLine(
+                        onTerms: () => openLink(context, SupportLinks.termsUrl),
+                        onPrivacy: () => openLink(context, SupportLinks.privacyPolicyUrl),
+                      ),
                     ],
                     const SizedBox(height: 16),
                     Center(
