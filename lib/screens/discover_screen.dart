@@ -27,6 +27,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final _searchController = TextEditingController();
 
   late Future<List<Car>> _future;
+  late Future<List<String>> _suggestionsFuture;
   String _query = '';
   int _tab = 0; // 0 = Cars, 1 = Partners
 
@@ -45,6 +46,7 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   void initState() {
     super.initState();
     _future = _load();
+    _suggestionsFuture = _loadSuggestions();
     _applySavedLocation();
     _searchController.addListener(() {
       final q = _searchController.text.trim();
@@ -145,9 +147,96 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   Future<void> _openCar(Car car) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => CarDetailScreen(car: car)),
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => CarDetailScreen(car: car)));
+  }
+
+  /// Phase-1 search suggestions: frequency-ranked keywords drawn from the cars
+  /// you follow and your own garage — their makes/models/chassis codes and the
+  /// mod categories logged against them. No history logging or ML; purely
+  /// derived from data we already have. Returns [] when there's nothing to go on
+  /// (e.g. a brand-new user), which hides the bar.
+  Future<List<String>> _loadSuggestions() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return const [];
+    try {
+      // Cars you follow + your own garage.
+      final followRows = await _client
+          .from('follows')
+          .select('car_id')
+          .eq('follower_id', uid);
+      final followedIds = [for (final r in followRows) r['car_id'] as String];
+
+      final carRows = <Map<String, dynamic>>[];
+      if (followedIds.isNotEmpty) {
+        carRows.addAll(
+          List<Map<String, dynamic>>.from(
+            await _client
+                .from('cars')
+                .select('id, make, model, chassis_model')
+                .inFilter('id', followedIds),
+          ),
+        );
+      }
+      carRows.addAll(
+        List<Map<String, dynamic>>.from(
+          await _client
+              .from('cars')
+              .select('id, make, model, chassis_model')
+              .eq('owner_id', uid),
+        ),
+      );
+
+      // Mod categories logged against those cars.
+      final carIds = {for (final c in carRows) c['id'] as String}.toList();
+      final catRows = carIds.isEmpty
+          ? const <Map<String, dynamic>>[]
+          : List<Map<String, dynamic>>.from(
+              await _client
+                  .from('build_entries')
+                  .select('category')
+                  .inFilter('car_id', carIds),
+            );
+
+      // Tally, case-insensitively, keeping the first-seen display spelling.
+      final counts = <String, int>{};
+      final display = <String, String>{};
+      void bump(String? raw, int weight) {
+        final t = raw?.trim() ?? '';
+        if (t.isEmpty) return;
+        final key = t.toLowerCase();
+        counts[key] = (counts[key] ?? 0) + weight;
+        display.putIfAbsent(key, () => t);
+      }
+
+      for (final c in carRows) {
+        bump(c['make'] as String?, 2); // makes/models weighted above chassis
+        bump(c['model'] as String?, 2);
+        bump(c['chassis_model'] as String?, 1);
+      }
+      for (final r in catRows) {
+        bump(r['category'] as String?, 1);
+      }
+
+      final keys = counts.keys.toList()
+        ..sort((a, b) {
+          final byCount = counts[b]!.compareTo(counts[a]!);
+          return byCount != 0 ? byCount : a.compareTo(b);
+        });
+      return [for (final k in keys.take(8)) display[k]!];
+    } catch (_) {
+      return const []; // suggestions are best-effort — never block Discover
+    }
+  }
+
+  /// Run a suggested keyword as a search.
+  void _applySuggestion(String keyword) {
+    _searchController.text = keyword;
+    _searchController.selection = TextSelection.collapsed(
+      offset: keyword.length,
     );
+    setState(() => _query = keyword);
   }
 
   @override
@@ -158,7 +247,21 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
           padding: EdgeInsets.only(left: 6),
           child: Text('Discover', style: TextStyle(fontSize: 22)),
         ),
-        actions: const [SettingsButton()],
+        actions: [
+          _Segment(
+            label: 'Cars',
+            selected: _tab == 0,
+            onTap: () => setState(() => _tab = 0),
+          ),
+          const SizedBox(width: 6),
+          _Segment(
+            label: 'Partners',
+            selected: _tab == 1,
+            onTap: () => setState(() => _tab = 1),
+          ),
+          const SizedBox(width: 4),
+          const SettingsButton(),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -173,31 +276,33 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 decoration: InputDecoration(
                   filled: true,
                   fillColor: AppColors.graphiteRaised,
-                  hintText: _tab == 0 ? 'Search cars, builds…' : 'Search partners…',
+                  hintText: _tab == 0
+                      ? 'Search cars, builds…'
+                      : 'Search partners…',
                   prefixIcon: const Icon(Icons.search, color: AppColors.steel),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
                     borderSide: const BorderSide(color: AppColors.hairline),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: AppColors.ember, width: 1.5),
+                    borderSide: const BorderSide(
+                      color: AppColors.ember,
+                      width: 1.5,
+                    ),
                   ),
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-              child: Row(
-                children: [
-                  _Segment(label: 'Cars', selected: _tab == 0, onTap: () => setState(() => _tab = 0)),
-                  const SizedBox(width: 8),
-                  _Segment(label: 'Partners', selected: _tab == 1, onTap: () => setState(() => _tab = 1)),
-                ],
+            if (_tab == 0)
+              _SuggestionsBar(
+                future: _suggestionsFuture,
+                onTap: _applySuggestion,
               ),
-            ),
             if (_tab == 0)
               _LocationBar(
                 nearMe: _nearMe,
@@ -213,94 +318,109 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
               child: _tab == 1
                   ? PartnersView(query: _query)
                   : FutureBuilder<List<Car>>(
-                future: _future,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: AppColors.ember),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return RefreshIndicator(
-                      color: AppColors.ember,
-                      backgroundColor: AppColors.graphite,
-                      onRefresh: _refresh,
-                      child: ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          SizedBox(
-                            height: MediaQuery.sizeOf(context).height * 0.7,
-                            child: EmptyState(
-                              icon: Icons.error_outline,
-                              title: 'Could not load Discover',
-                              message: '${snapshot.error}',
-                              action: FilledButton(
-                                onPressed: _refresh,
-                                child: const Text('Try again'),
+                      future: _future,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.ember,
+                            ),
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return RefreshIndicator(
+                            color: AppColors.ember,
+                            backgroundColor: AppColors.graphite,
+                            onRefresh: _refresh,
+                            child: ListView(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                SizedBox(
+                                  height:
+                                      MediaQuery.sizeOf(context).height * 0.7,
+                                  child: EmptyState(
+                                    icon: Icons.error_outline,
+                                    title: 'Could not load Discover',
+                                    message: '${snapshot.error}',
+                                    action: FilledButton(
+                                      onPressed: _refresh,
+                                      child: const Text('Try again'),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        final cars = snapshot.data ?? const <Car>[];
+                        if (cars.isEmpty) {
+                          return const EmptyState(
+                            icon: Icons.travel_explore_outlined,
+                            title: 'No cars to discover yet',
+                            message:
+                                'When other people add cars, they\'ll show up here to follow.',
+                          );
+                        }
+
+                        final visible = _visibleCars(cars);
+                        if (visible.isEmpty) {
+                          final msg = _nearMe
+                              ? 'No cars within ${UnitsPref.radiusLabel(_radiusKm)}'
+                              : 'No matches';
+                          return Center(
+                            child: Text(
+                              msg,
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                color: AppColors.textMuted,
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
+                          );
+                        }
 
-                  final cars = snapshot.data ?? const <Car>[];
-                  if (cars.isEmpty) {
-                    return const EmptyState(
-                      icon: Icons.travel_explore_outlined,
-                      title: 'No cars to discover yet',
-                      message:
-                          'When other people add cars, they\'ll show up here to follow.',
-                    );
-                  }
-
-                  final visible = _visibleCars(cars);
-                  if (visible.isEmpty) {
-                    final msg = _nearMe
-                        ? 'No cars within ${UnitsPref.radiusLabel(_radiusKm)}'
-                        : 'No matches';
-                    return Center(
-                      child: Text(
-                        msg,
-                        style: GoogleFonts.inter(fontSize: 15, color: AppColors.textMuted),
-                      ),
-                    );
-                  }
-
-                  return RefreshIndicator(
-                    color: AppColors.ember,
-                    backgroundColor: AppColors.graphite,
-                    onRefresh: _refresh,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        // ~150px tiles → 2 columns on a phone, more on web.
-                        var cols = (constraints.maxWidth / 150).floor();
-                        if (cols < 2) cols = 2;
-                        if (cols > 6) cols = 6;
-                        return GridView.builder(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: cols,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 1,
-                          ),
-                          itemCount: visible.length,
-                          itemBuilder: (_, i) => _GridTile(
-                            car: visible[i].car,
-                            distanceLabel: visible[i].distanceKm == null
-                                ? null
-                                : UnitsPref.distanceLabel(visible[i].distanceKm!),
-                            onTap: () => _openCar(visible[i].car),
+                        return RefreshIndicator(
+                          color: AppColors.ember,
+                          backgroundColor: AppColors.graphite,
+                          onRefresh: _refresh,
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              // ~150px tiles → 2 columns on a phone, more on web.
+                              var cols = (constraints.maxWidth / 150).floor();
+                              if (cols < 2) cols = 2;
+                              if (cols > 6) cols = 6;
+                              return GridView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(
+                                  12,
+                                  0,
+                                  12,
+                                  16,
+                                ),
+                                gridDelegate:
+                                    SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: cols,
+                                      mainAxisSpacing: 12,
+                                      crossAxisSpacing: 12,
+                                      childAspectRatio: 1,
+                                    ),
+                                itemCount: visible.length,
+                                itemBuilder: (_, i) => _GridTile(
+                                  car: visible[i].car,
+                                  distanceLabel: visible[i].distanceKm == null
+                                      ? null
+                                      : UnitsPref.distanceLabel(
+                                          visible[i].distanceKm!,
+                                        ),
+                                  onTap: () => _openCar(visible[i].car),
+                                ),
+                              );
+                            },
                           ),
                         );
                       },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         ),
@@ -311,7 +431,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
 
 /// A pill toggle for the Cars / Partners tabs.
 class _Segment extends StatelessWidget {
-  const _Segment({required this.label, required this.selected, required this.onTap});
+  const _Segment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -321,18 +445,114 @@ class _Segment extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? AppColors.ember : AppColors.graphiteRaised,
+          color: selected ? AppColors.cream : AppColors.graphiteRaised,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: selected ? AppColors.ember : AppColors.hairline),
+          border: Border.all(
+            color: selected ? AppColors.cream : AppColors.hairline,
+          ),
         ),
+        child: Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: selected ? AppColors.carbon : AppColors.steel,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A horizontal row of suggested search keywords (Phase 1), sitting in the slot
+/// freed by moving the Cars/Partners toggle up to the app bar. Hidden while the
+/// suggestions load or when there are none.
+class _SuggestionsBar extends StatelessWidget {
+  const _SuggestionsBar({required this.future, required this.onTap});
+
+  final Future<List<String>> future;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<String>>(
+      future: future,
+      builder: (context, snapshot) {
+        final suggestions = snapshot.data ?? const <String>[];
+        if (suggestions.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+          child: SizedBox(
+            height: 34,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              itemCount: suggestions.length + 1,
+              separatorBuilder: (_, _) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                if (i == 0) {
+                  return Center(
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.auto_awesome,
+                          size: 14,
+                          color: AppColors.steel,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'For you',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
+                  );
+                }
+                final keyword = suggestions[i - 1];
+                return _SuggestionChip(
+                  label: keyword,
+                  onTap: () => onTap(keyword),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SuggestionChip extends StatelessWidget {
+  const _SuggestionChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: AppColors.graphiteRaised,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: AppColors.hairline),
+        ),
+        alignment: Alignment.center,
         child: Text(
           label,
           style: GoogleFonts.inter(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: selected ? AppColors.onEmber : AppColors.steel,
+            color: AppColors.cream,
           ),
         ),
       ),
@@ -361,74 +581,92 @@ class _GridTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (car.hasPhoto)
-              Image.network(
-                car.photoUrl!,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const _TileFallback(),
-                loadingBuilder: (context, child, progress) =>
-                    progress == null ? child : const _TileFallback(),
-              )
-            else
-              const _TileFallback(),
-            const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Colors.transparent, Colors.transparent, Color(0xCC121418)],
-                stops: [0.0, 0.55, 1.0],
-              ),
-            ),
-          ),
-          Positioned(
-            left: 8,
-            right: 8,
-            bottom: 7,
-              child: Text(
-                car.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.archivo(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.cream,
+      child: Container(
+        // A very thin ember outline over the tile edge.
+        foregroundDecoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.ember, width: 0.5),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (car.hasPhoto)
+                Image.network(
+                  car.photoUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const _TileFallback(),
+                  loadingBuilder: (context, child, progress) =>
+                      progress == null ? child : const _TileFallback(),
+                )
+              else
+                const _TileFallback(),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.transparent,
+                      Color(0xCC121418),
+                    ],
+                    stops: [0.0, 0.55, 1.0],
+                  ),
                 ),
               ),
-            ),
-            if (distanceLabel != null)
               Positioned(
                 left: 8,
-                top: 8,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.location_on, size: 12, color: AppColors.ember),
-                      const SizedBox(width: 3),
-                      Text(
-                        distanceLabel!,
-                        style: GoogleFonts.inter(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.cream,
-                        ),
-                      ),
-                    ],
+                right: 8,
+                bottom: 7,
+                child: Text(
+                  car.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.archivo(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.cream,
                   ),
                 ),
               ),
-          ],
+              if (distanceLabel != null)
+                Positioned(
+                  left: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.location_on,
+                          size: 12,
+                          color: AppColors.ember,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          distanceLabel!,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.cream,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -443,7 +681,11 @@ class _TileFallback extends StatelessWidget {
     return Container(
       color: AppColors.graphiteRaised,
       alignment: Alignment.center,
-      child: const Icon(Icons.directions_car_outlined, color: AppColors.steel, size: 32),
+      child: const Icon(
+        Icons.directions_car_outlined,
+        color: AppColors.steel,
+        size: 32,
+      ),
     );
   }
 }
@@ -489,9 +731,7 @@ class _LocationBar extends StatelessWidget {
                   color: nearMe ? AppColors.onEmber : AppColors.steel,
                 ),
                 label: const Text('Near me'),
-                onSelected: onToggle == null
-                    ? null
-                    : (v) => onToggle!(v),
+                onSelected: onToggle == null ? null : (v) => onToggle!(v),
               ),
               const SizedBox(width: 10),
               if (nearMe)
@@ -500,7 +740,11 @@ class _LocationBar extends StatelessWidget {
                     onTap: onChangeLocation,
                     child: Row(
                       children: [
-                        const Icon(Icons.location_on, size: 15, color: AppColors.ember),
+                        const Icon(
+                          Icons.location_on,
+                          size: 15,
+                          color: AppColors.ember,
+                        ),
                         const SizedBox(width: 4),
                         Flexible(
                           child: Text(
@@ -533,7 +777,10 @@ class _LocationBar extends StatelessWidget {
               children: [
                 Text(
                   'Within',
-                  style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textMuted,
+                  ),
                 ),
                 Expanded(
                   child: Slider(

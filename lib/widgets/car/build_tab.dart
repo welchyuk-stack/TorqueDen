@@ -176,7 +176,8 @@ class _BuildTabState extends State<BuildTab> {
   }
 
   /// Drill into a single entry: full detail sheet, with owner edit/delete.
-  Future<void> _openDetail(BuildEntry entry) async {
+  /// Tapping a category card brings up every mod in that section.
+  Future<void> _openCategory(String label, List<BuildEntry> entries) async {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -184,14 +185,15 @@ class _BuildTabState extends State<BuildTab> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (sheetCtx) => _EntryDetailSheet(
-        entry: entry,
+      builder: (sheetCtx) => _CategorySheet(
+        label: label,
+        entries: entries,
         canManage: _canManage,
-        onEdit: () {
+        onEdit: (entry) {
           Navigator.of(sheetCtx).pop();
           _openEditor(entry: entry);
         },
-        onDelete: () {
+        onDelete: (entry) {
           Navigator.of(sheetCtx).pop();
           _confirmDelete(entry);
         },
@@ -298,7 +300,7 @@ class _BuildTabState extends State<BuildTab> {
                           child: _CategoryCard(
                             label: k,
                             entries: grouped[k]!,
-                            onOpen: _openDetail,
+                            onOpen: () => _openCategory(k, grouped[k]!),
                           ),
                         ),
                     ],
@@ -313,10 +315,10 @@ class _BuildTabState extends State<BuildTab> {
   }
 }
 
-/// One category cell in the build grid: a labelled card previewing up to three
-/// entry "slots". If the category has more, a three-dot control pops the rest
-/// down inline (drill-in). Tapping a slot opens the entry's detail sheet.
-class _CategoryCard extends StatefulWidget {
+/// One category cell in the build grid: a labelled card previewing up to two
+/// entry slots (with a three-dot "more" hint when there are others). Tapping
+/// anywhere on the card — header or a slot — brings up every mod in the section.
+class _CategoryCard extends StatelessWidget {
   const _CategoryCard({
     required this.label,
     required this.entries,
@@ -325,150 +327,120 @@ class _CategoryCard extends StatefulWidget {
 
   final String label;
   final List<BuildEntry> entries;
-  final void Function(BuildEntry) onOpen;
+  final VoidCallback onOpen;
 
-  @override
-  State<_CategoryCard> createState() => _CategoryCardState();
-}
-
-class _CategoryCardState extends State<_CategoryCard> {
   static const _slots = 2;
-  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    final entries = widget.entries;
     final hasMore = entries.length > _slots;
-    final visible = _expanded ? entries : entries.take(_slots).toList();
+    final visible = entries.take(_slots).toList();
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
-      decoration: BoxDecoration(
-        color: AppColors.graphite,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.hairline),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.label.toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+    return InkWell(
+      onTap: onOpen,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
+        decoration: BoxDecoration(
+          color: AppColors.graphite,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.hairline),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5,
+                      color: AppColors.ember,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${entries.length}',
                   style: GoogleFonts.inter(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                    color: AppColors.ember,
+                    color: AppColors.steel,
                   ),
                 ),
-              ),
-              Text(
-                '${entries.length}',
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.steel,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          // The slots pop down smoothly when expanded.
-          AnimatedSize(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            alignment: Alignment.topCenter,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final e in visible)
-                  _EntrySlot(entry: e, onTap: () => widget.onOpen(e)),
-                // Faint placeholders fill an under-filled card up to the slot
-                // count so cards paired in a row line up and the grid reads
-                // evenly. Only in the collapsed preview.
-                if (!_expanded)
-                  for (var i = visible.length; i < _slots; i++) const _GhostSlot(),
               ],
             ),
-          ),
-          // Bottom control — always reserves the same height so collapsed cards
-          // line up: centred three-dots to drill in (or collapse), otherwise a
-          // matching empty spacer.
-          SizedBox(
-            height: 22,
-            width: double.infinity,
-            child: hasMore
-                ? InkWell(
-                    onTap: () => setState(() => _expanded = !_expanded),
-                    borderRadius: BorderRadius.circular(8),
-                    child: Center(
-                      child: Icon(
-                        _expanded ? Icons.expand_less : Icons.more_horiz,
-                        size: 18,
-                        color: AppColors.steel,
-                      ),
-                    ),
-                  )
-                : null,
-          ),
-        ],
+            const SizedBox(height: 4),
+            for (final e in visible) _EntrySlot(entry: e),
+            // Faint placeholders fill an under-filled card up to the slot count
+            // so cards paired in a row line up and the grid reads evenly.
+            for (var i = visible.length; i < _slots; i++) const _GhostSlot(),
+            // Reserve a matching bottom row on every card — a centred three-dot
+            // hint when there are more mods than shown, else an empty spacer —
+            // so collapsed cards stay level.
+            SizedBox(
+              height: 22,
+              width: double.infinity,
+              child: hasMore
+                  ? const Center(
+                      child: Icon(Icons.more_horiz, size: 18, color: AppColors.steel),
+                    )
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// A single compact entry row inside a category card: title + date, a media
-/// hint, tappable to open the full detail sheet.
+/// A single compact entry row inside a category card: title + date + media hint.
+/// Display-only — the whole card handles the tap.
 class _EntrySlot extends StatelessWidget {
-  const _EntrySlot({required this.entry, required this.onTap});
+  const _EntrySlot({required this.entry});
 
   final BuildEntry entry;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Row(
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              margin: const EdgeInsets.only(right: 8),
-              decoration: const BoxDecoration(color: AppColors.ember, shape: BoxShape.circle),
-            ),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    entry.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.cream,
-                    ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: const BoxDecoration(color: AppColors.ember, shape: BoxShape.circle),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  entry.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.cream,
                   ),
-                  Text(
-                    _formatDate(entry.createdAt),
-                    style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
-                  ),
-                ],
-              ),
+                ),
+                Text(
+                  _formatDate(entry.createdAt),
+                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                ),
+              ],
             ),
-            if (entry.hasMedia)
-              const Icon(Icons.photo_outlined, size: 14, color: AppColors.steel),
-          ],
-        ),
+          ),
+          if (entry.hasMedia)
+            const Icon(Icons.photo_outlined, size: 14, color: AppColors.steel),
+        ],
       ),
     );
   }
@@ -509,10 +481,85 @@ class _GhostSlot extends StatelessWidget {
   }
 }
 
-/// Full read view of one build entry (the drill-in target): date, title, media,
+/// Bottom sheet listing every mod in one category — opened by tapping a card.
+class _CategorySheet extends StatelessWidget {
+  const _CategorySheet({
+    required this.label,
+    required this.entries,
+    required this.canManage,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final String label;
+  final List<BuildEntry> entries;
+  final bool canManage;
+  final void Function(BuildEntry) onEdit;
+  final void Function(BuildEntry) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label.toUpperCase(),
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                        color: AppColors.ember,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    entries.length == 1 ? '1 mod' : '${entries.length} mods',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.steel,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                itemCount: entries.length,
+                separatorBuilder: (_, _) =>
+                    const Divider(color: AppColors.hairline, height: 28),
+                itemBuilder: (_, i) => _EntryDetailBlock(
+                  entry: entries[i],
+                  canManage: canManage,
+                  onEdit: () => onEdit(entries[i]),
+                  onDelete: () => onDelete(entries[i]),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Full detail of one entry within the category sheet: date, title, media,
 /// body, linked-mod, plus edit/delete for the owner.
-class _EntryDetailSheet extends StatelessWidget {
-  const _EntryDetailSheet({
+class _EntryDetailBlock extends StatelessWidget {
+  const _EntryDetailBlock({
     required this.entry,
     required this.canManage,
     required this.onEdit,
@@ -529,91 +576,75 @@ class _EntryDetailSheet extends StatelessWidget {
     final body = entry.body?.trim();
     final hasBody = body != null && body.isNotEmpty;
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  if (entry.hasCategory) ...[
-                    _CategoryChip(label: entry.category!),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(
-                    _formatDate(entry.createdAt).toUpperCase(),
-                    style: GoogleFonts.inter(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                      letterSpacing: 0.5,
-                      color: AppColors.ember,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                entry.title,
-                style: GoogleFonts.archivo(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 20,
-                  color: AppColors.cream,
-                ),
-              ),
-              if (entry.hasMedia) ...[
-                const SizedBox(height: 12),
-                PostMediaView(media: entry.media),
-              ],
-              if (hasBody) ...[
-                const SizedBox(height: 10),
-                Text(
-                  body,
-                  style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.5),
-                ),
-              ],
-              if (entry.hasLinkedMod) ...[
-                const SizedBox(height: 12),
-                LinkedModChip(label: entry.linkedModLabel!),
-              ],
-              if (canManage) ...[
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: onEdit,
-                        icon: const Icon(Icons.edit_outlined, size: 18),
-                        label: const Text('Edit'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.ember,
-                          side: const BorderSide(color: AppColors.hairline),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: onDelete,
-                        icon: const Icon(Icons.delete_outline, size: 18),
-                        label: const Text('Delete'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.danger,
-                          side: const BorderSide(color: AppColors.hairline),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _formatDate(entry.createdAt).toUpperCase(),
+          style: GoogleFonts.inter(
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+            letterSpacing: 0.5,
+            color: AppColors.ember,
           ),
         ),
-      ),
+        const SizedBox(height: 6),
+        Text(
+          entry.title,
+          style: GoogleFonts.archivo(
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+            color: AppColors.cream,
+          ),
+        ),
+        if (entry.hasMedia) ...[
+          const SizedBox(height: 12),
+          PostMediaView(media: entry.media),
+        ],
+        if (hasBody) ...[
+          const SizedBox(height: 10),
+          Text(
+            body,
+            style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.5),
+          ),
+        ],
+        if (entry.hasLinkedMod) ...[
+          const SizedBox(height: 12),
+          LinkedModChip(label: entry.linkedModLabel!),
+        ],
+        if (canManage) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onEdit,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Edit'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.ember,
+                    side: const BorderSide(color: AppColors.hairline),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onDelete,
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Delete'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: const BorderSide(color: AppColors.hairline),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }
@@ -651,34 +682,6 @@ class LinkedModChip extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// A small pill showing an entry's mod category, e.g. "EXHAUST".
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: AppColors.graphiteRaised,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.hairline),
-      ),
-      child: Text(
-        label.toUpperCase(),
-        style: GoogleFonts.inter(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.5,
-          color: AppColors.steel,
-        ),
       ),
     );
   }
