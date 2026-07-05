@@ -34,7 +34,9 @@ class VideoTrimService {
   static Future<String?> overlayText(
     String path, {
     required String text,
+    required double normX,
     required double normY,
+    required double rotationDeg,
     required double sizeFraction,
     required String colorHex,
   }) async {
@@ -42,7 +44,9 @@ class VideoTrimService {
       return await _channel.invokeMethod<String>('overlayText', {
         'path': path,
         'text': text,
+        'normX': normX,
         'normY': normY,
+        'rotationDeg': rotationDeg,
         'sizeFraction': sizeFraction,
         'colorHex': colorHex,
       });
@@ -58,5 +62,14 @@ class VideoTrimService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Plays the short record chime — the built-in iOS start tone when [start] is
+  /// true, the stop tone otherwise. Fire-and-forget; a missing channel or a
+  /// silent ringer just means no sound.
+  static Future<void> recordChime({required bool start}) async {
+    try {
+      await _channel.invokeMethod<void>('chime', {'start': start});
+    } catch (_) {/* sound is non-essential */}
   }
 }

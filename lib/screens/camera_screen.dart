@@ -6,6 +6,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:torqueden/screens/video_trim_screen.dart';
+import 'package:torqueden/services/video_trim_service.dart';
 import 'package:torqueden/theme.dart';
 
 /// A single captured photo or clip, returned by [CameraScreen].
@@ -166,6 +167,8 @@ class _CameraScreenState extends State<CameraScreen>
     final c = _controller;
     if (c == null || !c.value.isInitialized || _isRecording) return;
     try {
+      // Chime first so the start tone doesn't bleed into the clip's audio.
+      VideoTrimService.recordChime(start: true);
       await c.startVideoRecording();
       _ring.forward(from: 0);
       _maxTimer = Timer(Duration(seconds: widget.maxClipSeconds), _stopRecording);
@@ -182,6 +185,8 @@ class _CameraScreenState extends State<CameraScreen>
     _ring.stop();
     try {
       final x = await c.stopVideoRecording();
+      // Stop tone — after recording ends, so it's never captured in the clip.
+      VideoTrimService.recordChime(start: false);
       if (!mounted) return;
       setState(() => _isRecording = false);
       // Offer a trim before attaching; returns the (trimmed) path, or the

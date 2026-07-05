@@ -139,7 +139,7 @@ class _CarDetailScreenState extends State<CarDetailScreen>
                 children: [
                   SpecsTab(car: _car),
                   BuildTab(car: _car),
-                  PostsTab(car: _car),
+                  PostsTab(car: _car, isOwner: isOwn),
                 ],
               ),
             ),

@@ -98,6 +98,8 @@ class _MediaItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (media.isVideo) {
+      // Always show the whole recorded frame (letterbox rather than crop), so
+      // nothing near the edges — like a corner caption — gets cut off.
       return _VideoItem(url: media.url, startMuted: startMuted);
     }
     return Image.network(
@@ -206,14 +208,13 @@ class _VideoItemState extends State<_VideoItem> {
         child: Stack(
           fit: StackFit.expand,
           children: [
+            // Show the whole frame at the player's own aspect ratio, centred
+            // (matches the trim editor). Never crops; letterboxes if needed.
             ColoredBox(
               color: Colors.black,
-              child: FittedBox(
-                fit: BoxFit.cover,
-                clipBehavior: Clip.hardEdge,
-                child: SizedBox(
-                  width: c.value.size.width,
-                  height: c.value.size.height,
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: c.value.aspectRatio,
                   child: VideoPlayer(c),
                 ),
               ),

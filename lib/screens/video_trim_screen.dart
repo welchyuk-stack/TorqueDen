@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:torqueden/services/video_trim_service.dart';
 import 'package:torqueden/theme.dart';
@@ -29,9 +31,13 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
 
   // Text overlay.
   String? _text; // null = no caption
+  double _textNormX = 0.5; // horizontal centre (0 left … 1 right)
   double _textNormY = 0.82; // vertical centre (0 top … 1 bottom)
+  double _textRotation = 0; // degrees
   double _textSize = 0.08; // font size as fraction of video height
   String _textColorHex = '#FFFFFF';
+
+  static const _presetColors = ['#FFFFFF', '#111318', '#FF6A2B'];
 
   static const _minClipMs = 500.0; // don't allow a trim shorter than 0.5s
 
@@ -112,7 +118,9 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
         final out = await VideoTrimService.overlayText(
           path,
           text: _text!.trim(),
+          normX: _textNormX,
           normY: _textNormY,
+          rotationDeg: _textRotation,
           sizeFraction: _textSize,
           colorHex: _textColorHex,
         );
@@ -191,28 +199,16 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
               ],
             ],
           ),
-          if (hasText)
+          if (hasText) ...[
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Row(
                 children: [
-                  for (final hex in const ['#FFFFFF', '#111318', '#FF6A2B', '#FFD400'])
-                    GestureDetector(
-                      onTap: () => setState(() => _textColorHex = hex),
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 8),
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: _hexColor(hex),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _textColorHex == hex ? AppColors.ember : AppColors.hairline,
-                            width: _textColorHex == hex ? 2 : 1,
-                          ),
-                        ),
-                      ),
-                    ),
+                  for (final hex in _presetColors)
+                    _colorDot(hex,
+                        selected: _textColorHex == hex,
+                        onTap: () => setState(() => _textColorHex = hex)),
+                  _customColorSwatch(),
                   const Spacer(),
                   _sizeChip('S', 0.05),
                   _sizeChip('M', 0.08),
@@ -220,9 +216,123 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                 ],
               ),
             ),
+            Row(
+              children: [
+                const Icon(Icons.rotate_right, size: 18, color: AppColors.steel),
+                Expanded(
+                  child: Slider(
+                    min: -180,
+                    max: 180,
+                    value: _textRotation,
+                    activeColor: AppColors.ember,
+                    inactiveColor: AppColors.hairline,
+                    onChanged: _exporting ? null : (v) => setState(() => _textRotation = v),
+                  ),
+                ),
+                SizedBox(
+                  width: 42,
+                  child: Text('${_textRotation.round()}°',
+                      textAlign: TextAlign.end,
+                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textSecondary)),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _colorDot(String hex, {required bool selected, required VoidCallback onTap}) {
+    return GestureDetector(
+      onTap: _exporting ? null : onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          color: _hexColor(hex),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? AppColors.ember : AppColors.hairline,
+            width: selected ? 2 : 1,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A rainbow swatch that opens the colour mixer; shows the chosen colour when
+  /// a custom (non-preset) colour is active.
+  Widget _customColorSwatch() {
+    final isCustom = !_presetColors.contains(_textColorHex);
+    return GestureDetector(
+      onTap: _exporting ? null : _pickColor,
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          gradient: const SweepGradient(colors: [
+            Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00),
+            Color(0xFF00FFFF), Color(0xFF0000FF), Color(0xFFFF00FF), Color(0xFFFF0000),
+          ]),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isCustom ? AppColors.ember : AppColors.hairline,
+            width: isCustom ? 2 : 1,
+          ),
+        ),
+        child: isCustom
+            ? Center(
+                child: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: _hexColor(_textColorHex),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
+  Future<void> _pickColor() async {
+    var temp = _hexColor(_textColorHex);
+    final picked = await showDialog<Color>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Text colour',
+            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: SingleChildScrollView(
+          child: ColorPicker(
+            pickerColor: temp,
+            onColorChanged: (c) => temp = c,
+            enableAlpha: false,
+            paletteType: PaletteType.hsvWithHue,
+            pickerAreaHeightPercent: 0.7,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel)),
+          ),
+          FilledButton(onPressed: () => Navigator.pop(ctx, temp), child: const Text('Use')),
+        ],
+      ),
+    );
+    if (picked != null) setState(() => _textColorHex = _toHex(picked));
+  }
+
+  String _toHex(Color c) {
+    int ch(double v) => (v * 255).round().clamp(0, 255);
+    String h(int v) => v.toRadixString(16).padLeft(2, '0');
+    return '#${h(ch(c.r))}${h(ch(c.g))}${h(ch(c.b))}'.toUpperCase();
   }
 
   Widget _sizeChip(String label, double value) {
@@ -310,27 +420,35 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                                 Positioned.fill(
                                   child: LayoutBuilder(
                                     builder: (ctx, box) {
+                                      final pw = box.maxWidth;
                                       final ph = box.maxHeight;
                                       return Align(
                                         alignment: Alignment(
-                                            0, (_textNormY * 2 - 1).clamp(-1.0, 1.0)),
+                                          (_textNormX * 2 - 1).clamp(-1.0, 1.0),
+                                          (_textNormY * 2 - 1).clamp(-1.0, 1.0),
+                                        ),
                                         child: GestureDetector(
-                                          onVerticalDragUpdate: (d) => setState(() {
+                                          onPanUpdate: (d) => setState(() {
+                                            _textNormX =
+                                                (_textNormX + d.delta.dx / pw).clamp(0.0, 1.0);
                                             _textNormY =
                                                 (_textNormY + d.delta.dy / ph).clamp(0.0, 1.0);
                                           }),
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                                            child: Text(
-                                              _text!,
-                                              textAlign: TextAlign.center,
-                                              style: TextStyle(
-                                                color: _hexColor(_textColorHex),
-                                                fontSize: _textSize * ph,
-                                                fontWeight: FontWeight.bold,
-                                                shadows: const [
-                                                  Shadow(color: Colors.black, blurRadius: 6),
-                                                ],
+                                          child: Transform.rotate(
+                                            angle: _textRotation * math.pi / 180,
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                                              child: Text(
+                                                _text!,
+                                                textAlign: TextAlign.center,
+                                                style: GoogleFonts.varelaRound(
+                                                  color: _hexColor(_textColorHex),
+                                                  fontSize: _textSize * ph,
+                                                  fontWeight: FontWeight.w700,
+                                                  shadows: const [
+                                                    Shadow(color: Colors.black, blurRadius: 6),
+                                                  ],
+                                                ),
                                               ),
                                             ),
                                           ),

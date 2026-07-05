@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
@@ -11,11 +12,15 @@ import 'package:visibility_detector/visibility_detector.dart';
 /// Posts tab for a car profile: an Instagram-style media grid of every photo
 /// and clip the car has posted. Self-contained scrollable so it slots straight
 /// into a TabBarView, with pull-to-refresh throughout (including the empty and
-/// error states).
+/// error states). When [isOwner] is true, long-pressing a tile offers to
+/// delete the whole post.
 class PostsTab extends StatefulWidget {
-  const PostsTab({super.key, required this.car});
+  const PostsTab({super.key, required this.car, this.isOwner = false});
 
   final Car car;
+
+  /// Whether the signed-in user owns this car (enables deleting posts).
+  final bool isOwner;
 
   @override
   State<PostsTab> createState() => _PostsTabState();
@@ -57,6 +62,62 @@ class _PostsTabState extends State<PostsTab> {
         builder: (_) => PostViewerScreen(media: media),
       ),
     );
+  }
+
+  Future<void> _confirmDelete(PostMedia media) async {
+    final entryId = media.buildEntryId;
+    if (entryId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text(
+          'Delete this post?',
+          style:
+              GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'This removes the post — and any photos or clips in it — from your '
+          'garage and feeds. This can\'t be undone.',
+          style: GoogleFonts.inter(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Delete',
+              style:
+                  GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _deletePost(entryId);
+  }
+
+  Future<void> _deletePost(String entryId) async {
+    try {
+      // Cascades to this post's media, likes and comments (FKs ON DELETE
+      // CASCADE); RLS allows it only for the car's owner.
+      await _client.from('build_entries').delete().eq('id', entryId);
+      await _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post deleted.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not delete the post. Please try again.')),
+        );
+      }
+    }
   }
 
   @override
@@ -114,6 +175,8 @@ class _PostsTabState extends State<PostsTab> {
                 itemBuilder: (_, i) => _MediaTile(
                   media: media[i],
                   onTap: () => _openViewer(media[i]),
+                  onLongPress:
+                      widget.isOwner ? () => _confirmDelete(media[i]) : null,
                 ),
               );
             },
@@ -158,15 +221,19 @@ class _ScrollableState extends StatelessWidget {
 /// graphiteRaised fallback used elsewhere; videos show a graphiteRaised well.
 /// Either way, a small play badge marks video tiles.
 class _MediaTile extends StatelessWidget {
-  const _MediaTile({required this.media, required this.onTap});
+  const _MediaTile({required this.media, required this.onTap, this.onLongPress});
 
   final PostMedia media;
   final VoidCallback onTap;
+
+  /// Long-press action (delete) — only wired for the car's owner.
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Stack(
         fit: StackFit.expand,
         children: [

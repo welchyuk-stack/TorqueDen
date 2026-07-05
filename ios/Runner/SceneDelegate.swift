@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 import CoreImage
 import Flutter
 import UIKit
@@ -19,6 +20,15 @@ class SceneDelegate: FlutterSceneDelegate {
       binaryMessenger: controller.binaryMessenger
     )
     channel.setMethodCallHandler { call, result in
+      // A short record start/stop chime — the built-in iOS video-record tones
+      // (no asset, no dependency). Handled before the path guard below, since
+      // it takes no file.
+      if call.method == "chime" {
+        let start = (call.arguments as? [String: Any])?["start"] as? Bool ?? true
+        AudioServicesPlaySystemSound(start ? 1117 : 1118)
+        result(nil)
+        return
+      }
       guard let args = call.arguments as? [String: Any],
         let path = args["path"] as? String
       else {
@@ -43,7 +53,9 @@ class SceneDelegate: FlutterSceneDelegate {
         }
         SceneDelegate.overlayText(
           path: path, text: text,
+          normX: (args["normX"] as? Double) ?? 0.5,
           normY: (args["normY"] as? Double) ?? 0.85,
+          rotationDeg: (args["rotationDeg"] as? Double) ?? 0.0,
           sizeFraction: (args["sizeFraction"] as? Double) ?? 0.08,
           colorHex: (args["colorHex"] as? String) ?? "#FFFFFF",
           result: result)
@@ -154,12 +166,12 @@ class SceneDelegate: FlutterSceneDelegate {
     return f
   }
 
-  /// Bakes a centred caption over the video via a Core Animation text layer.
-  /// [normY] is the vertical centre of the text (0 = top, 1 = bottom);
-  /// [sizeFraction] is font size as a fraction of the video height.
+  /// Bakes a caption over the video via a Core Animation text layer, freely
+  /// positioned at ([normX], [normY]) centre (0…1), rotated [rotationDeg], in a
+  /// rounded system font. [sizeFraction] is font size as a fraction of height.
   static func overlayText(
-    path: String, text: String, normY: Double, sizeFraction: Double, colorHex: String,
-    result: @escaping FlutterResult
+    path: String, text: String, normX: Double, normY: Double, rotationDeg: Double,
+    sizeFraction: Double, colorHex: String, result: @escaping FlutterResult
   ) {
     let asset = AVURLAsset(url: URL(fileURLWithPath: path))
     let videoComp = AVMutableVideoComposition(propertiesOf: asset)  // orientation-aware
@@ -173,17 +185,35 @@ class SceneDelegate: FlutterSceneDelegate {
     parentLayer.addSublayer(videoLayer)
 
     let fontSize = max(12, CGFloat(sizeFraction) * h)
-    let lineH = fontSize * 1.4
+    // Rounded system font (SF Rounded).
+    let baseFont = UIFont.systemFont(ofSize: fontSize, weight: .bold)
+    let roundedFont: UIFont
+    if let d = baseFont.fontDescriptor.withDesign(.rounded) {
+      roundedFont = UIFont(descriptor: d, size: fontSize)
+    } else {
+      roundedFont = baseFont
+    }
     let style = NSMutableParagraphStyle()
     style.alignment = .center
-    let textLayer = CATextLayer()
-    textLayer.string = NSAttributedString(
+    let attr = NSAttributedString(
       string: text,
       attributes: [
-        .font: UIFont.boldSystemFont(ofSize: fontSize),
+        .font: roundedFont,
         .foregroundColor: SceneDelegate.uiColor(colorHex),
         .paragraphStyle: style,
       ])
+
+    // Size the layer to the text (capped to the video width), so it can be
+    // rotated about its centre and placed freely.
+    let maxW = w - 24
+    let measured = attr.boundingRect(
+      with: CGSize(width: maxW, height: .greatestFiniteMagnitude),
+      options: [.usesLineFragmentOrigin, .usesFontLeading], context: nil)
+    let boxW = min(ceil(measured.width) + 16, maxW)
+    let boxH = ceil(measured.height) + 10
+
+    let textLayer = CATextLayer()
+    textLayer.string = attr
     textLayer.isWrapped = true
     textLayer.alignmentMode = .center
     textLayer.contentsScale = 2.0
@@ -191,9 +221,12 @@ class SceneDelegate: FlutterSceneDelegate {
     textLayer.shadowOpacity = 0.85
     textLayer.shadowRadius = 4
     textLayer.shadowOffset = .zero
+    textLayer.bounds = CGRect(x: 0, y: 0, width: boxW, height: boxH)
+    textLayer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
     // CALayer origin is bottom-left; normY is the centre measured from the top.
-    let originY = h - (CGFloat(normY) * h) - lineH / 2
-    textLayer.frame = CGRect(x: 12, y: originY, width: w - 24, height: lineH)
+    textLayer.position = CGPoint(x: CGFloat(normX) * w, y: h - CGFloat(normY) * h)
+    // Negate: preview is y-down, this composition space is y-up.
+    textLayer.transform = CATransform3DMakeRotation(CGFloat(-rotationDeg) * .pi / 180, 0, 0, 1)
     parentLayer.addSublayer(textLayer)
 
     videoComp.animationTool = AVVideoCompositionCoreAnimationTool(
