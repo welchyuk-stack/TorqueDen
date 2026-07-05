@@ -36,6 +36,17 @@ class SceneDelegate: FlutterSceneDelegate {
           filter: args["filter"] as? String, result: result)
       case "thumbnail":
         SceneDelegate.thumbnail(path: path, result: result)
+      case "overlayText":
+        guard let text = args["text"] as? String else {
+          result(FlutterError(code: "bad_args", message: "text required", details: nil))
+          return
+        }
+        SceneDelegate.overlayText(
+          path: path, text: text,
+          normY: (args["normY"] as? Double) ?? 0.85,
+          sizeFraction: (args["sizeFraction"] as? Double) ?? 0.08,
+          colorHex: (args["colorHex"] as? String) ?? "#FFFFFF",
+          result: result)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -141,5 +152,86 @@ class SceneDelegate: FlutterSceneDelegate {
     f?.setValue(CIVector(x: g[0], y: g[1], z: g[2], w: 0), forKey: "inputGVector")
     f?.setValue(CIVector(x: b[0], y: b[1], z: b[2], w: 0), forKey: "inputBVector")
     return f
+  }
+
+  /// Bakes a centred caption over the video via a Core Animation text layer.
+  /// [normY] is the vertical centre of the text (0 = top, 1 = bottom);
+  /// [sizeFraction] is font size as a fraction of the video height.
+  static func overlayText(
+    path: String, text: String, normY: Double, sizeFraction: Double, colorHex: String,
+    result: @escaping FlutterResult
+  ) {
+    let asset = AVURLAsset(url: URL(fileURLWithPath: path))
+    let videoComp = AVMutableVideoComposition(propertiesOf: asset)  // orientation-aware
+    let w = videoComp.renderSize.width
+    let h = videoComp.renderSize.height
+
+    let parentLayer = CALayer()
+    parentLayer.frame = CGRect(x: 0, y: 0, width: w, height: h)
+    let videoLayer = CALayer()
+    videoLayer.frame = CGRect(x: 0, y: 0, width: w, height: h)
+    parentLayer.addSublayer(videoLayer)
+
+    let fontSize = max(12, CGFloat(sizeFraction) * h)
+    let lineH = fontSize * 1.4
+    let style = NSMutableParagraphStyle()
+    style.alignment = .center
+    let textLayer = CATextLayer()
+    textLayer.string = NSAttributedString(
+      string: text,
+      attributes: [
+        .font: UIFont.boldSystemFont(ofSize: fontSize),
+        .foregroundColor: SceneDelegate.uiColor(colorHex),
+        .paragraphStyle: style,
+      ])
+    textLayer.isWrapped = true
+    textLayer.alignmentMode = .center
+    textLayer.contentsScale = 2.0
+    textLayer.shadowColor = UIColor.black.cgColor
+    textLayer.shadowOpacity = 0.85
+    textLayer.shadowRadius = 4
+    textLayer.shadowOffset = .zero
+    // CALayer origin is bottom-left; normY is the centre measured from the top.
+    let originY = h - (CGFloat(normY) * h) - lineH / 2
+    textLayer.frame = CGRect(x: 12, y: originY, width: w - 24, height: lineH)
+    parentLayer.addSublayer(textLayer)
+
+    videoComp.animationTool = AVVideoCompositionCoreAnimationTool(
+      postProcessingAsVideoLayer: videoLayer, in: parentLayer)
+
+    guard
+      let export = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality)
+    else {
+      result(FlutterError(code: "export_init", message: "Could not create export session", details: nil))
+      return
+    }
+    let outURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("text_\(UUID().uuidString).mp4")
+    export.outputURL = outURL
+    export.outputFileType = .mp4
+    export.videoComposition = videoComp
+    export.exportAsynchronously {
+      DispatchQueue.main.async {
+        if export.status == .completed {
+          result(outURL.path)
+        } else {
+          result(
+            FlutterError(
+              code: "export_failed",
+              message: export.error?.localizedDescription ?? "Export failed", details: nil))
+        }
+      }
+    }
+  }
+
+  static func uiColor(_ hex: String) -> UIColor {
+    let s = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+    var v: UInt64 = 0
+    Scanner(string: s).scanHexInt64(&v)
+    return UIColor(
+      red: CGFloat((v & 0xFF0000) >> 16) / 255,
+      green: CGFloat((v & 0x00FF00) >> 8) / 255,
+      blue: CGFloat(v & 0x0000FF) / 255,
+      alpha: 1)
   }
 }

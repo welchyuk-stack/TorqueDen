@@ -28,6 +28,29 @@ class VideoTrimService {
     }
   }
 
+  /// Bakes a centred caption over [path]. [normY] is the text's vertical centre
+  /// (0=top, 1=bottom); [sizeFraction] is font size as a fraction of video
+  /// height; [colorHex] like '#FFFFFF'. Returns the output path, or null.
+  static Future<String?> overlayText(
+    String path, {
+    required String text,
+    required double normY,
+    required double sizeFraction,
+    required String colorHex,
+  }) async {
+    try {
+      return await _channel.invokeMethod<String>('overlayText', {
+        'path': path,
+        'text': text,
+        'normY': normY,
+        'sizeFraction': sizeFraction,
+        'colorHex': colorHex,
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// A poster-frame JPEG for [path], or null on failure / unsupported platform.
   static Future<Uint8List?> thumbnail(String path) async {
     try {

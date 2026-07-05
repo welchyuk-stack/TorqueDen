@@ -27,6 +27,12 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
   String? _filterId; // null = no filter
   bool _exporting = false;
 
+  // Text overlay.
+  String? _text; // null = no caption
+  double _textNormY = 0.82; // vertical centre (0 top … 1 bottom)
+  double _textSize = 0.08; // font size as fraction of video height
+  String _textColorHex = '#FFFFFF';
+
   static const _minClipMs = 500.0; // don't allow a trim shorter than 0.5s
 
   _VideoFilter get _filter => _filters.firstWhere((f) => f.id == _filterId);
@@ -83,19 +89,36 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
   Future<void> _done() async {
     final trimmed = _startMs > 0 || _endMs < _totalMs;
     final filtered = _filterId != null;
-    if (!trimmed && !filtered) {
+    final hasText = _text != null && _text!.trim().isNotEmpty;
+    if (!trimmed && !filtered && !hasText) {
       await _finish(widget.inputPath); // nothing changed
       return;
     }
     setState(() => _exporting = true);
     try {
-      final out = await VideoTrimService.trim(
-        widget.inputPath,
-        Duration(milliseconds: _startMs.toInt()),
-        Duration(milliseconds: _endMs.toInt()),
-        filter: _filterId,
-      );
-      await _finish(out ?? widget.inputPath);
+      var path = widget.inputPath;
+      // 1. Trim + filter in one re-encode (if either changed).
+      if (trimmed || filtered) {
+        final out = await VideoTrimService.trim(
+          path,
+          Duration(milliseconds: _startMs.toInt()),
+          Duration(milliseconds: _endMs.toInt()),
+          filter: _filterId,
+        );
+        if (out != null) path = out;
+      }
+      // 2. Bake the caption over the result (a second pass, only if used).
+      if (hasText) {
+        final out = await VideoTrimService.overlayText(
+          path,
+          text: _text!.trim(),
+          normY: _textNormY,
+          sizeFraction: _textSize,
+          colorHex: _textColorHex,
+        );
+        if (out != null) path = out;
+      }
+      await _finish(path);
     } catch (_) {
       if (!mounted) return;
       setState(() => _exporting = false);
@@ -104,6 +127,130 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
       );
       await _finish(widget.inputPath);
     }
+  }
+
+  Future<void> _editText() async {
+    final controller = TextEditingController(text: _text ?? '');
+    final entered = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Caption',
+            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 60,
+          textCapitalization: TextCapitalization.sentences,
+          style: GoogleFonts.inter(color: AppColors.cream),
+          decoration: const InputDecoration(hintText: 'Your caption'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
+    if (entered != null) setState(() => _text = entered.isEmpty ? null : entered);
+  }
+
+  Color _hexColor(String hex) =>
+      Color(int.parse(hex.replaceFirst('#', ''), radix: 16) | 0xFF000000);
+
+  Widget _textTools() {
+    final hasText = _text != null && _text!.trim().isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              OutlinedButton.icon(
+                onPressed: _exporting ? null : _editText,
+                icon: Icon(hasText ? Icons.edit : Icons.text_fields, size: 18),
+                label: Text(hasText ? 'Edit text' : 'Add text'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.ember,
+                  side: const BorderSide(color: AppColors.hairline),
+                ),
+              ),
+              if (hasText) ...[
+                const Spacer(),
+                IconButton(
+                  onPressed: _exporting ? null : () => setState(() => _text = null),
+                  icon: const Icon(Icons.close, size: 18, color: AppColors.steel),
+                  tooltip: 'Remove text',
+                ),
+              ],
+            ],
+          ),
+          if (hasText)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  for (final hex in const ['#FFFFFF', '#111318', '#FF6A2B', '#FFD400'])
+                    GestureDetector(
+                      onTap: () => setState(() => _textColorHex = hex),
+                      child: Container(
+                        margin: const EdgeInsets.only(right: 8),
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: _hexColor(hex),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: _textColorHex == hex ? AppColors.ember : AppColors.hairline,
+                            width: _textColorHex == hex ? 2 : 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  _sizeChip('S', 0.05),
+                  _sizeChip('M', 0.08),
+                  _sizeChip('L', 0.12),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sizeChip(String label, double value) {
+    final sel = _textSize == value;
+    return Padding(
+      padding: const EdgeInsets.only(left: 6),
+      child: GestureDetector(
+        onTap: () => setState(() => _textSize = value),
+        child: Container(
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: sel ? AppColors.ember : AppColors.graphiteRaised,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: sel ? AppColors.ember : AppColors.hairline),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: sel ? AppColors.onEmber : AppColors.steel,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _finish(String path) async {
@@ -159,6 +306,39 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                                     child: Icon(Icons.play_arrow, size: 56, color: Colors.white),
                                   ),
                                 ),
+                              if (_text != null && _text!.trim().isNotEmpty)
+                                Positioned.fill(
+                                  child: LayoutBuilder(
+                                    builder: (ctx, box) {
+                                      final ph = box.maxHeight;
+                                      return Align(
+                                        alignment: Alignment(
+                                            0, (_textNormY * 2 - 1).clamp(-1.0, 1.0)),
+                                        child: GestureDetector(
+                                          onVerticalDragUpdate: (d) => setState(() {
+                                            _textNormY =
+                                                (_textNormY + d.delta.dy / ph).clamp(0.0, 1.0);
+                                          }),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                                            child: Text(
+                                              _text!,
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                color: _hexColor(_textColorHex),
+                                                fontSize: _textSize * ph,
+                                                fontWeight: FontWeight.bold,
+                                                shadows: const [
+                                                  Shadow(color: Colors.black, blurRadius: 6),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -200,6 +380,7 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                       },
                     ),
                   ),
+                  _textTools(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
                     child: Column(
