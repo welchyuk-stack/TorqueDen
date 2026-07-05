@@ -1,4 +1,5 @@
-/// A reply to a club thread. Mirrors the `club_replies` table.
+/// A reply to a club thread. Mirrors the `club_replies` table, with a
+/// thumbs-up/down [score] and the current user's [myVote] (-1, 0 or 1).
 class ClubReply {
   const ClubReply({
     required this.id,
@@ -7,6 +8,8 @@ class ClubReply {
     required this.body,
     required this.createdAt,
     this.authorName,
+    this.score = 0,
+    this.myVote = 0,
   });
 
   final String id;
@@ -18,8 +21,31 @@ class ClubReply {
   /// From embedded `author:profiles(username)`.
   final String? authorName;
 
-  factory ClubReply.fromMap(Map<String, dynamic> map) {
+  /// Net score (sum of votes) and the signed-in user's own vote.
+  final int score;
+  final int myVote;
+
+  ClubReply copyWith({int? score, int? myVote}) => ClubReply(
+        id: id,
+        threadId: threadId,
+        authorId: authorId,
+        body: body,
+        createdAt: createdAt,
+        authorName: authorName,
+        score: score ?? this.score,
+        myVote: myVote ?? this.myVote,
+      );
+
+  factory ClubReply.fromMap(Map<String, dynamic> map, {String? currentUserId}) {
     final author = map['author'];
+    final votes = (map['club_reply_votes'] as List?) ?? const [];
+    var score = 0;
+    var myVote = 0;
+    for (final v in votes.cast<Map<String, dynamic>>()) {
+      final value = (v['value'] as num?)?.toInt() ?? 0;
+      score += value;
+      if (currentUserId != null && v['user_id'] == currentUserId) myVote = value;
+    }
     return ClubReply(
       id: map['id'] as String,
       threadId: map['thread_id'] as String,
@@ -27,6 +53,8 @@ class ClubReply {
       body: map['body'] as String,
       createdAt: DateTime.parse(map['created_at'] as String),
       authorName: author is Map ? author['username'] as String? : null,
+      score: score,
+      myVote: myVote,
     );
   }
 }

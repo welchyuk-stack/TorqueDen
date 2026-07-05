@@ -5,7 +5,8 @@
 -- Applied migrations (supabase/migrations/):
 --   0001_car_location · 0002_merge_mods_into_build · 0003_post_link_to_mod
 --   0004_fuzz_car_locations · 0005_clubs · 0006_club_admin · 0007_reports_blocks
---   0008_club_pins_rules_archive · 0009_club_admins_bans (mods + member bans)
+--   0008_club_pins_rules_archive · 0009_club_admins_bans
+--   0010_club_reply_votes (thumbs up/down on club replies)
 --
 -- Not included: table data; the auth.users trigger for handle_new_user()
 -- (recreate: CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
@@ -16,7 +17,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict tW6HVQ982r9gvqfkPOXNRuzVGx21WjjlVnIRRO94fKgCB9KAnDvfJmmGsN2dBmx
+\restrict A4FlKh4Em0cQQGanBfBJs2FoDRUwdBb4VojeozUgdbyzmhgYtMvDkXvedWdKkXd
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -208,6 +209,20 @@ CREATE TABLE public.club_replies (
     author_id uuid DEFAULT auth.uid() NOT NULL,
     body text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: club_reply_votes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.club_reply_votes (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    reply_id uuid NOT NULL,
+    user_id uuid DEFAULT auth.uid() NOT NULL,
+    value smallint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT club_reply_votes_value_check CHECK ((value = ANY (ARRAY['-1'::integer, 1])))
 );
 
 
@@ -422,6 +437,22 @@ ALTER TABLE ONLY public.club_replies
 
 
 --
+-- Name: club_reply_votes club_reply_votes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_reply_votes
+    ADD CONSTRAINT club_reply_votes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: club_reply_votes club_reply_votes_reply_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_reply_votes
+    ADD CONSTRAINT club_reply_votes_reply_id_user_id_key UNIQUE (reply_id, user_id);
+
+
+--
 -- Name: club_threads club_threads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -581,6 +612,13 @@ CREATE INDEX club_replies_thread_idx ON public.club_replies USING btree (thread_
 
 
 --
+-- Name: club_reply_votes_reply_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_reply_votes_reply_idx ON public.club_reply_votes USING btree (reply_id);
+
+
+--
 -- Name: club_threads_club_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -716,6 +754,22 @@ ALTER TABLE ONLY public.club_replies
 
 ALTER TABLE ONLY public.club_replies
     ADD CONSTRAINT club_replies_thread_id_fkey FOREIGN KEY (thread_id) REFERENCES public.club_threads(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_reply_votes club_reply_votes_reply_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_reply_votes
+    ADD CONSTRAINT club_reply_votes_reply_id_fkey FOREIGN KEY (reply_id) REFERENCES public.club_replies(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_reply_votes club_reply_votes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_reply_votes
+    ADD CONSTRAINT club_reply_votes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
 
 
 --
@@ -875,6 +929,27 @@ CREATE POLICY "Author or mod can update thread" ON public.club_threads FOR UPDAT
 --
 
 CREATE POLICY "Cars are viewable by everyone" ON public.cars FOR SELECT USING (true);
+
+
+--
+-- Name: club_reply_votes Cast own vote; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Cast own vote" ON public.club_reply_votes FOR INSERT WITH CHECK ((user_id = auth.uid()));
+
+
+--
+-- Name: club_reply_votes Change own vote; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Change own vote" ON public.club_reply_votes FOR UPDATE USING ((user_id = auth.uid()));
+
+
+--
+-- Name: club_reply_votes Clear own vote; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Clear own vote" ON public.club_reply_votes FOR DELETE USING ((user_id = auth.uid()));
 
 
 --
@@ -1081,6 +1156,13 @@ CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE
 
 
 --
+-- Name: club_reply_votes Votes are viewable by everyone; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Votes are viewable by everyone" ON public.club_reply_votes FOR SELECT USING (true);
+
+
+--
 -- Name: blocks; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -1121,6 +1203,12 @@ ALTER TABLE public.club_members ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.club_replies ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: club_reply_votes; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.club_reply_votes ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: club_threads; Type: ROW SECURITY; Schema: public; Owner: -
@@ -1400,6 +1488,15 @@ GRANT ALL ON TABLE public.club_replies TO service_role;
 
 
 --
+-- Name: TABLE club_reply_votes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.club_reply_votes TO anon;
+GRANT ALL ON TABLE public.club_reply_votes TO authenticated;
+GRANT ALL ON TABLE public.club_reply_votes TO service_role;
+
+
+--
 -- Name: TABLE club_threads; Type: ACL; Schema: public; Owner: -
 --
 
@@ -1544,5 +1641,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict tW6HVQ982r9gvqfkPOXNRuzVGx21WjjlVnIRRO94fKgCB9KAnDvfJmmGsN2dBmx
+\unrestrict A4FlKh4Em0cQQGanBfBJs2FoDRUwdBb4VojeozUgdbyzmhgYtMvDkXvedWdKkXd
 

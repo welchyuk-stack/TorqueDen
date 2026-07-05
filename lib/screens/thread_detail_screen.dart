@@ -32,7 +32,9 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
   final _client = Supabase.instance.client;
   final _input = TextEditingController();
 
-  late Future<List<ClubReply>> _future;
+  List<ClubReply> _replies = [];
+  bool _loading = true;
+  Object? _error;
   bool _sending = false;
   late bool _pinned = widget.thread.isPinned;
 
@@ -41,7 +43,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _future = _load();
+    _load();
   }
 
   Future<void> _togglePin() async {
@@ -62,23 +64,60 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
     super.dispose();
   }
 
-  Future<List<ClubReply>> _load() async {
-    await Moderation.refreshBlocks();
-    final rows = await _client
-        .from('club_replies')
-        .select('*, author:profiles(username)')
-        .eq('thread_id', widget.thread.id)
-        .order('created_at', ascending: true);
-    return rows
-        .map(ClubReply.fromMap)
-        .where((r) => !Moderation.isBlocked(r.authorId))
-        .toList();
+  Future<void> _load() async {
+    try {
+      await Moderation.refreshBlocks();
+      final rows = await _client
+          .from('club_replies')
+          .select('*, author:profiles(username), club_reply_votes(user_id, value)')
+          .eq('thread_id', widget.thread.id)
+          .order('created_at', ascending: true);
+      final list = rows
+          .map((r) => ClubReply.fromMap(r, currentUserId: _uid))
+          .where((r) => !Moderation.isBlocked(r.authorId))
+          .toList();
+      if (!mounted) return;
+      setState(() {
+        _replies = list;
+        _loading = false;
+        _error = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e;
+        _loading = false;
+      });
+    }
   }
 
-  Future<void> _refresh() async {
-    final future = _load();
-    setState(() => _future = future);
-    await future;
+  Future<void> _refresh() => _load();
+
+  Future<void> _vote(ClubReply r, int value) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final newVote = r.myVote == value ? 0 : value; // tap the same arrow to clear
+    final delta = newVote - r.myVote;
+    void apply(int vote, int score) {
+      final i = _replies.indexWhere((x) => x.id == r.id);
+      if (i != -1) _replies[i] = _replies[i].copyWith(myVote: vote, score: score);
+    }
+
+    setState(() => apply(newVote, r.score + delta));
+    try {
+      if (newVote == 0) {
+        await _client.from('club_reply_votes').delete().eq('reply_id', r.id).eq('user_id', uid);
+      } else {
+        await _client.from('club_reply_votes').upsert(
+          {'reply_id': r.id, 'user_id': uid, 'value': newVote},
+          onConflict: 'reply_id,user_id',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => apply(r.myVote, r.score)); // revert
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not vote: $e')));
+    }
   }
 
   Future<void> _send() async {
@@ -135,81 +174,82 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
         child: Column(
           children: [
             Expanded(
-              child: FutureBuilder<List<ClubReply>>(
-                future: _future,
-                builder: (context, snapshot) {
-                  final replies = snapshot.data ?? const <ClubReply>[];
-                  return RefreshIndicator(
-                    color: AppColors.ember,
-                    backgroundColor: AppColors.graphite,
-                    onRefresh: _refresh,
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              child: RefreshIndicator(
+                color: AppColors.ember,
+                backgroundColor: AppColors.graphite,
+                onRefresh: _refresh,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                  children: [
+                    // The question / opening post.
+                    Text(
+                      t.title,
+                      style: GoogleFonts.archivo(
+                          fontSize: 21, fontWeight: FontWeight.w700, color: AppColors.cream, height: 1.2),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${t.authorName ?? 'Member'} · ${timeAgo(t.createdAt)}',
+                      style: GoogleFonts.inter(fontSize: 12.5, color: AppColors.textMuted),
+                    ),
+                    if (body.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Text(body,
+                          style: GoogleFonts.inter(fontSize: 15.5, color: AppColors.textSecondary, height: 1.5)),
+                    ],
+                    const SizedBox(height: 20),
+                    Row(
                       children: [
-                        // The question / opening post.
                         Text(
-                          t.title,
-                          style: GoogleFonts.archivo(
-                              fontSize: 21, fontWeight: FontWeight.w700, color: AppColors.cream, height: 1.2),
+                          _replies.isEmpty
+                              ? 'Replies'
+                              : '${_replies.length} ${_replies.length == 1 ? 'reply' : 'replies'}',
+                          style: GoogleFonts.inter(
+                              fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.steel),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${t.authorName ?? 'Member'} · ${timeAgo(t.createdAt)}',
-                          style: GoogleFonts.inter(fontSize: 12.5, color: AppColors.textMuted),
-                        ),
-                        if (body.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          Text(body,
-                              style: GoogleFonts.inter(fontSize: 15.5, color: AppColors.textSecondary, height: 1.5)),
-                        ],
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Text(
-                              replies.isEmpty
-                                  ? 'Replies'
-                                  : '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
-                              style: GoogleFonts.inter(
-                                  fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.steel),
-                            ),
-                            const SizedBox(width: 10),
-                            const Expanded(child: Divider(color: AppColors.hairline)),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        if (snapshot.connectionState == ConnectionState.waiting)
-                          const Padding(
-                            padding: EdgeInsets.only(top: 30),
-                            child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
-                          )
-                        else if (replies.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 24),
-                            child: Text(
-                              widget.canPost ? 'No replies yet — be the first.' : 'No replies yet.',
-                              style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
-                            ),
-                          )
-                        else
-                          for (final r in replies)
-                            _ReplyTile(
-                              reply: r,
-                              canDelete: widget.canModerate || r.authorId == _uid,
-                              onDelete: () => _deleteReply(r),
-                              onMore: () => showModerationSheet(
-                                context,
-                                targetType: 'reply',
-                                targetId: r.id,
-                                authorId: r.authorId,
-                                authorName: r.authorName,
-                                onBlocked: _refresh,
-                              ),
-                            ),
+                        const SizedBox(width: 10),
+                        const Expanded(child: Divider(color: AppColors.hairline)),
                       ],
                     ),
-                  );
-                },
+                    const SizedBox(height: 6),
+                    if (_loading)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 30),
+                        child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
+                      )
+                    else if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 24),
+                        child: Text('Could not load replies.\n$_error',
+                            style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                      )
+                    else if (_replies.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 24),
+                        child: Text(
+                          widget.canPost ? 'No replies yet — be the first.' : 'No replies yet.',
+                          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted),
+                        ),
+                      )
+                    else
+                      for (final r in _replies)
+                        _ReplyTile(
+                          reply: r,
+                          canDelete: widget.canModerate || r.authorId == _uid,
+                          onDelete: () => _deleteReply(r),
+                          onVote: (v) => _vote(r, v),
+                          onMore: () => showModerationSheet(
+                            context,
+                            targetType: 'reply',
+                            targetId: r.id,
+                            authorId: r.authorId,
+                            authorName: r.authorName,
+                            onBlocked: _refresh,
+                          ),
+                        ),
+                  ],
+                ),
               ),
             ),
             if (widget.canPost)
@@ -286,12 +326,14 @@ class _ReplyTile extends StatelessWidget {
     required this.canDelete,
     required this.onDelete,
     required this.onMore,
+    required this.onVote,
   });
 
   final ClubReply reply;
   final bool canDelete;
   final VoidCallback onDelete;
   final VoidCallback onMore;
+  final ValueChanged<int> onVote;
 
   @override
   Widget build(BuildContext context) {
@@ -329,11 +371,85 @@ class _ReplyTile extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(reply.body,
                     style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.45)),
+                const SizedBox(height: 6),
+                _VoteBar(
+                  score: reply.score,
+                  myVote: reply.myVote,
+                  onUp: () => onVote(1),
+                  onDown: () => onVote(-1),
+                ),
               ],
             ),
           ),
         ],
       ),
+      ),
+    );
+  }
+}
+
+/// Thumbs up / score / thumbs down for a reply.
+class _VoteBar extends StatelessWidget {
+  const _VoteBar({
+    required this.score,
+    required this.myVote,
+    required this.onUp,
+    required this.onDown,
+  });
+
+  final int score;
+  final int myVote;
+  final VoidCallback onUp;
+  final VoidCallback onDown;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _VoteButton(
+          icon: myVote == 1 ? Icons.thumb_up : Icons.thumb_up_outlined,
+          active: myVote == 1,
+          onTap: onUp,
+        ),
+        const SizedBox(width: 8),
+        Text(
+          '$score',
+          style: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: myVote == 1
+                ? AppColors.ember
+                : myVote == -1
+                    ? AppColors.steel
+                    : AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 8),
+        _VoteButton(
+          icon: myVote == -1 ? Icons.thumb_down : Icons.thumb_down_outlined,
+          active: myVote == -1,
+          onTap: onDown,
+        ),
+      ],
+    );
+  }
+}
+
+class _VoteButton extends StatelessWidget {
+  const _VoteButton({required this.icon, required this.active, required this.onTap});
+  final IconData icon;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: Icon(icon, size: 18, color: active ? AppColors.ember : AppColors.steel),
       ),
     );
   }
