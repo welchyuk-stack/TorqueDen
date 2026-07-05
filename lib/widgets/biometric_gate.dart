@@ -17,7 +17,7 @@ class BiometricGate extends StatefulWidget {
   State<BiometricGate> createState() => _BiometricGateState();
 }
 
-class _BiometricGateState extends State<BiometricGate> with WidgetsBindingObserver {
+class _BiometricGateState extends State<BiometricGate> {
   bool _locked = false;
   bool _prompting = false;
 
@@ -27,26 +27,13 @@ class _BiometricGateState extends State<BiometricGate> with WidgetsBindingObserv
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
+    // Lock once per app session (at launch). We deliberately do NOT re-lock on
+    // background/resume — that re-prompted on every app switch, and even on
+    // transient 'inactive' states (Control Center, the app switcher, system
+    // dialogs). Face ID is asked for once when the app opens.
     if (_shouldLock) {
       _locked = true;
       WidgetsBinding.instance.addPostFrameCallback((_) => _unlock());
-    }
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
-      // Re-arm the lock when leaving the app so returning requires auth.
-      if (_shouldLock && !_locked) setState(() => _locked = true);
-    } else if (state == AppLifecycleState.resumed) {
-      if (_locked) _unlock();
     }
   }
 
