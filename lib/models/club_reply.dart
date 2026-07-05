@@ -7,6 +7,7 @@ class ClubReply {
     required this.authorId,
     required this.body,
     required this.createdAt,
+    this.parentId,
     this.authorName,
     this.score = 0,
     this.myVote = 0,
@@ -17,6 +18,9 @@ class ClubReply {
   final String authorId;
   final String body;
   final DateTime createdAt;
+
+  /// Null for a top-level reply; otherwise the reply this one answers.
+  final String? parentId;
 
   /// From embedded `author:profiles(username)`.
   final String? authorName;
@@ -31,6 +35,7 @@ class ClubReply {
         authorId: authorId,
         body: body,
         createdAt: createdAt,
+        parentId: parentId,
         authorName: authorName,
         score: score ?? this.score,
         myVote: myVote ?? this.myVote,
@@ -52,6 +57,7 @@ class ClubReply {
       authorId: map['author_id'] as String,
       body: map['body'] as String,
       createdAt: DateTime.parse(map['created_at'] as String),
+      parentId: map['parent_id'] as String?,
       authorName: author is Map ? author['username'] as String? : null,
       score: score,
       myVote: myVote,

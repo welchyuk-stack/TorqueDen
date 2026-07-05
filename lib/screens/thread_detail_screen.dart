@@ -36,9 +36,27 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
   bool _loading = true;
   Object? _error;
   bool _sending = false;
+  ClubReply? _replyTarget;
   late bool _pinned = widget.thread.isPinned;
 
   String? get _uid => _client.auth.currentUser?.id;
+
+  void _startReply(ClubReply r) => setState(() => _replyTarget = r);
+  void _cancelReply() => setState(() => _replyTarget = null);
+
+  /// Groups replies into top-level entries each carrying their nested replies.
+  List<({ClubReply top, List<ClubReply> children})> _threads() {
+    final tops = <ClubReply>[];
+    final byParent = <String, List<ClubReply>>{};
+    for (final r in _replies) {
+      if (r.parentId == null) {
+        tops.add(r);
+      } else {
+        byParent.putIfAbsent(r.parentId!, () => []).add(r);
+      }
+    }
+    return [for (final t in tops) (top: t, children: byParent[t.id] ?? const [])];
+  }
 
   @override
   void initState() {
@@ -124,13 +142,17 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
     final text = _input.text.trim();
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
+    // Reply-to-a-reply attaches under the top-level reply (one level deep).
+    final parentId = _replyTarget == null ? null : (_replyTarget!.parentId ?? _replyTarget!.id);
     try {
       await _client.from('club_replies').insert({
         'thread_id': widget.thread.id,
         'body': text,
+        'parent_id': ?parentId,
       });
       if (!mounted) return;
       _input.clear();
+      _replyTarget = null;
       FocusScope.of(context).unfocus();
       await _refresh();
     } catch (e) {
@@ -152,6 +174,22 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
           .showSnackBar(SnackBar(content: Text('Could not delete: $e')));
     }
   }
+
+  Widget _tile(ClubReply r) => _ReplyTile(
+        reply: r,
+        canDelete: widget.canModerate || r.authorId == _uid,
+        onDelete: () => _deleteReply(r),
+        onVote: (v) => _vote(r, v),
+        onReply: widget.canPost ? () => _startReply(r) : null,
+        onMore: () => showModerationSheet(
+          context,
+          targetType: 'reply',
+          targetId: r.id,
+          authorId: r.authorId,
+          authorName: r.authorName,
+          onBlocked: _refresh,
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -233,21 +271,14 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
                         ),
                       )
                     else
-                      for (final r in _replies)
-                        _ReplyTile(
-                          reply: r,
-                          canDelete: widget.canModerate || r.authorId == _uid,
-                          onDelete: () => _deleteReply(r),
-                          onVote: (v) => _vote(r, v),
-                          onMore: () => showModerationSheet(
-                            context,
-                            targetType: 'reply',
-                            targetId: r.id,
-                            authorId: r.authorId,
-                            authorName: r.authorName,
-                            onBlocked: _refresh,
+                      for (final th in _threads()) ...[
+                        _tile(th.top),
+                        for (final child in th.children)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 40),
+                            child: _tile(child),
                           ),
-                        ),
+                      ],
                   ],
                 ),
               ),
@@ -279,7 +310,36 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
         color: AppColors.graphite,
         border: Border(top: BorderSide(color: AppColors.hairline)),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_replyTarget != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8, left: 4),
+              child: Row(
+                children: [
+                  Icon(Icons.reply, size: 15, color: AppColors.ember),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Replying to ${_replyTarget!.authorName ?? 'member'}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 13, color: AppColors.textSecondary),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: _cancelReply,
+                    borderRadius: BorderRadius.circular(12),
+                    child: const Padding(
+                      padding: EdgeInsets.all(2),
+                      child: Icon(Icons.close, size: 16, color: AppColors.steel),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           Expanded(
@@ -294,7 +354,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
                 isDense: true,
                 filled: true,
                 fillColor: AppColors.graphiteRaised,
-                hintText: 'Add a reply…',
+                hintText: _replyTarget != null ? 'Write a reply…' : 'Add a reply…',
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
                 enabledBorder:
@@ -316,6 +376,8 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
           ),
         ],
       ),
+          ],
+        ),
     );
   }
 }
@@ -327,6 +389,7 @@ class _ReplyTile extends StatelessWidget {
     required this.onDelete,
     required this.onMore,
     required this.onVote,
+    required this.onReply,
   });
 
   final ClubReply reply;
@@ -334,6 +397,7 @@ class _ReplyTile extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onMore;
   final ValueChanged<int> onVote;
+  final VoidCallback? onReply;
 
   @override
   Widget build(BuildContext context) {
@@ -372,11 +436,28 @@ class _ReplyTile extends StatelessWidget {
                 Text(reply.body,
                     style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.45)),
                 const SizedBox(height: 6),
-                _VoteBar(
-                  score: reply.score,
-                  myVote: reply.myVote,
-                  onUp: () => onVote(1),
-                  onDown: () => onVote(-1),
+                Row(
+                  children: [
+                    _VoteBar(
+                      score: reply.score,
+                      myVote: reply.myVote,
+                      onUp: () => onVote(1),
+                      onDown: () => onVote(-1),
+                    ),
+                    if (onReply != null) ...[
+                      const SizedBox(width: 14),
+                      InkWell(
+                        onTap: onReply,
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+                          child: Text('Reply',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.steel)),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),

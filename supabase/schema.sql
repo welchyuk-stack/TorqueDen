@@ -5,8 +5,8 @@
 -- Applied migrations (supabase/migrations/):
 --   0001_car_location · 0002_merge_mods_into_build · 0003_post_link_to_mod
 --   0004_fuzz_car_locations · 0005_clubs · 0006_club_admin · 0007_reports_blocks
---   0008_club_pins_rules_archive · 0009_club_admins_bans
---   0010_club_reply_votes (thumbs up/down on club replies)
+--   0008_club_pins_rules_archive · 0009_club_admins_bans · 0010_club_reply_votes
+--   0011_club_reply_parent (threaded replies)
 --
 -- Not included: table data; the auth.users trigger for handle_new_user()
 -- (recreate: CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users
@@ -17,7 +17,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict A4FlKh4Em0cQQGanBfBJs2FoDRUwdBb4VojeozUgdbyzmhgYtMvDkXvedWdKkXd
+\restrict FkJQ4qzf27Aky19WmlTRerviJVF6XgfAinHISrtbM47VJ87ufxmx8rB2bIhVYZ7
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.4
@@ -208,7 +208,8 @@ CREATE TABLE public.club_replies (
     thread_id uuid NOT NULL,
     author_id uuid DEFAULT auth.uid() NOT NULL,
     body text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    parent_id uuid
 );
 
 
@@ -605,6 +606,13 @@ CREATE INDEX club_members_user_idx ON public.club_members USING btree (user_id);
 
 
 --
+-- Name: club_replies_parent_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX club_replies_parent_idx ON public.club_replies USING btree (parent_id);
+
+
+--
 -- Name: club_replies_thread_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -746,6 +754,14 @@ ALTER TABLE ONLY public.club_members
 
 ALTER TABLE ONLY public.club_replies
     ADD CONSTRAINT club_replies_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: club_replies club_replies_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.club_replies
+    ADD CONSTRAINT club_replies_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.club_replies(id) ON DELETE CASCADE;
 
 
 --
@@ -1641,5 +1657,5 @@ ALTER DEFAULT PRIVILEGES FOR ROLE supabase_admin IN SCHEMA public GRANT ALL ON T
 -- PostgreSQL database dump complete
 --
 
-\unrestrict A4FlKh4Em0cQQGanBfBJs2FoDRUwdBb4VojeozUgdbyzmhgYtMvDkXvedWdKkXd
+\unrestrict FkJQ4qzf27Aky19WmlTRerviJVF6XgfAinHISrtbM47VJ87ufxmx8rB2bIhVYZ7
 
