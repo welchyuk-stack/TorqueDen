@@ -4,6 +4,7 @@ import 'package:torqueden/screens/create_post_screen.dart';
 import 'package:torqueden/screens/discover_screen.dart';
 import 'package:torqueden/screens/feed_screen.dart';
 import 'package:torqueden/screens/garage_screen.dart';
+import 'package:torqueden/services/notifications_service.dart';
 import 'package:torqueden/widgets/floating_nav_bar.dart';
 
 /// The app shell: a floating glass bottom bar with a centre "+" create button,
@@ -26,6 +27,12 @@ class _MainShellState extends State<MainShell> {
     ClubsScreen(),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    NotificationsService.refreshUnread(); // seed the Home nav badge
+  }
+
   Future<void> _createPost() async {
     final posted = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => const CreatePostScreen()),
@@ -41,10 +48,14 @@ class _MainShellState extends State<MainShell> {
       // to work with.
       extendBody: true,
       body: IndexedStack(index: _index, children: _screens),
-      bottomNavigationBar: FloatingNavBar(
-        index: _index,
-        onSelect: (i) => setState(() => _index = i),
-        onCreate: _createPost,
+      bottomNavigationBar: ValueListenableBuilder<int>(
+        valueListenable: NotificationsService.unread,
+        builder: (context, unread, _) => FloatingNavBar(
+          index: _index,
+          onSelect: (i) => setState(() => _index = i),
+          onCreate: _createPost,
+          homeUnread: unread,
+        ),
       ),
     );
   }

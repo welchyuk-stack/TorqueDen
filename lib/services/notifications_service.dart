@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/app_notification.dart';
 
@@ -8,6 +9,14 @@ class NotificationsService {
   NotificationsService._();
 
   static SupabaseClient get _client => Supabase.instance.client;
+
+  /// Shared unread count so the bell and the Home nav badge stay in sync. Call
+  /// [refreshUnread] to update it (on launch, after reading, on resume).
+  static final ValueNotifier<int> unread = ValueNotifier<int>(0);
+
+  static Future<void> refreshUnread() async {
+    unread.value = await unreadCount();
+  }
 
   /// Most recent notifications (newest first), with the actor profile joined.
   static Future<List<AppNotification>> list({int limit = 50}) async {
@@ -36,9 +45,11 @@ class NotificationsService {
 
   static Future<void> markRead(String id) async {
     await _client.from('notifications').update({'read': true}).eq('id', id);
+    await refreshUnread();
   }
 
   static Future<void> markAllRead() async {
     await _client.from('notifications').update({'read': true}).eq('read', false);
+    await refreshUnread();
   }
 }

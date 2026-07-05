@@ -7,7 +7,6 @@ import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/services/entitlements.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
-import 'package:torqueden/widgets/notification_bell.dart';
 import 'package:torqueden/widgets/settings_button.dart';
 import 'package:torqueden/widgets/upgrade_sheet.dart';
 
@@ -97,7 +96,6 @@ class _GarageScreenState extends State<GarageScreen> {
             icon: const Icon(Icons.add, size: 25.2),
             tooltip: 'Add a car',
           ),
-          const NotificationBell(),
           const SettingsButton(),
         ],
       ),

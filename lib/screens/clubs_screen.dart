@@ -8,7 +8,6 @@ import 'package:torqueden/services/entitlements.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/upgrade_sheet.dart';
 import 'package:torqueden/widgets/empty_state.dart';
-import 'package:torqueden/widgets/notification_bell.dart';
 import 'package:torqueden/widgets/settings_button.dart';
 
 /// Clubs tab — browse and search public clubs (Discover) or the ones you've
@@ -138,7 +137,6 @@ class _ClubsScreenState extends State<ClubsScreen> {
             icon: const Icon(Icons.add, size: 25.2),
             tooltip: 'Create a club',
           ),
-          const NotificationBell(),
           const SettingsButton(),
         ],
       ),

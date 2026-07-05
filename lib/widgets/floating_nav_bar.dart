@@ -16,11 +16,15 @@ class FloatingNavBar extends StatelessWidget {
     required this.index,
     required this.onSelect,
     required this.onCreate,
+    this.homeUnread = 0,
   });
 
   final int index;
   final ValueChanged<int> onSelect;
   final VoidCallback onCreate;
+
+  /// Unread notification count — badges the Home item when > 0.
+  final int homeUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +46,7 @@ class FloatingNavBar extends StatelessWidget {
                 selectedIcon: Icons.home,
                 label: 'Home',
                 selected: index == 0,
+                showBadge: homeUnread > 0,
                 onTap: () => onSelect(0),
               ),
               _NavItem(
@@ -190,6 +195,7 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.showBadge = false,
   });
 
   final IconData icon;
@@ -197,6 +203,7 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool showBadge;
 
   @override
   Widget build(BuildContext context) {
@@ -207,8 +214,27 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(selected ? selectedIcon : icon,
-                color: selected ? AppColors.ember : AppColors.steel, size: 24),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(selected ? selectedIcon : icon,
+                    color: selected ? AppColors.ember : AppColors.steel, size: 24),
+                if (showBadge)
+                  Positioned(
+                    top: -1,
+                    right: -3,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: AppColors.ember,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.graphite, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 3),
             Text(
               label,
