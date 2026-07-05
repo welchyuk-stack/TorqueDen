@@ -23,6 +23,11 @@ class Entitlements {
   /// Creating clubs is a Premium feature. Open to everyone while [enforce] is off.
   static bool get canCreateClubs => !enforce || isPremium;
 
+  /// Whether to show house ads in the feed. Ad-free is a Premium/Partner perk,
+  /// but while [enforce] is off (pre-IAP) ads show to everyone — so they're
+  /// testable and earning from day one. Flips to Premium-exempt when enforced.
+  static bool get adsEnabled => !enforce || !isPremium;
+
   /// Creating/editing a Partner Page always requires the Partner tier — there's
   /// no free-trial concept for a B2B page, so this ignores [enforce]. (RLS also
   /// enforces it server-side.)
