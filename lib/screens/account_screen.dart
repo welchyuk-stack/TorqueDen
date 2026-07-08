@@ -26,6 +26,7 @@ class _AccountScreenState extends State<AccountScreen> {
   String? _avatarUrl;
   Uint8List? _avatarBytes;
   bool _saving = false;
+  bool _deleting = false;
 
   String get _uid => _client.auth.currentUser!.id;
   String? get _email => _client.auth.currentUser?.email;
@@ -185,13 +186,45 @@ class _AccountScreenState extends State<AccountScreen> {
         ],
       ),
     );
-    if (confirmed != true) return;
+    if (confirmed != true || _deleting) return;
+    final uid = _uid; // capture before any sign-out clears the session
+    setState(() => _deleting = true);
     try {
-      await _client.rpc('delete_own_account');
+      // Purges the user's storage files then deletes the auth user, cascading
+      // all their data (see migration 0023).
+      await _client.rpc('delete_own_account').timeout(const Duration(seconds: 20));
       await _client.auth.signOut();
-      // AuthGate swaps back to the login screen automatically.
+      // AuthGate swaps back to the login screen automatically; this unmounts.
     } catch (e) {
-      _snack('Could not delete your account: $e');
+      // A dropped connection or timeout doesn't tell us whether the delete
+      // actually went through server-side — so don't guess either way. Check
+      // for real: the profiles row is publicly readable and cascades away the
+      // moment the account is deleted, so its absence is a reliable signal.
+      final deleted = await _accountWasDeleted(uid);
+      if (deleted) {
+        await _client.auth.signOut();
+      } else if (mounted) {
+        setState(() => _deleting = false);
+        _snack('Could not delete your account. Please try again.');
+      }
+    }
+  }
+
+  /// True if [uid]'s profile no longer exists — i.e. the account was deleted,
+  /// even if the delete call itself errored or timed out on the way back.
+  /// False (not just "no") on an inconclusive check, so we never sign a user
+  /// out of an account that's still actually there.
+  Future<bool> _accountWasDeleted(String uid) async {
+    try {
+      final row = await _client
+          .from('profiles')
+          .select('id')
+          .eq('id', uid)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 10));
+      return row == null;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -291,9 +324,16 @@ class _AccountScreenState extends State<AccountScreen> {
                         color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
-                  onPressed: _deleteAccount,
-                  icon: const Icon(Icons.delete_forever_outlined, size: 20),
-                  label: const Text('Delete account'),
+                  onPressed: _deleting ? null : _deleteAccount,
+                  icon: _deleting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppColors.danger),
+                        )
+                      : const Icon(Icons.delete_forever_outlined, size: 20),
+                  label: Text(_deleting ? 'Deleting…' : 'Delete account'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.danger,
                     side: BorderSide(color: AppColors.danger.withValues(alpha: 0.5)),
