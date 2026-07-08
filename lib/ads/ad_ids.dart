@@ -10,7 +10,7 @@ import 'dart:io' show Platform;
 class AdIds {
   AdIds._();
 
-  static const bool useTestAds = true;
+  static const bool useTestAds = false;
 
   // Google sample/test banner unit IDs (serve test ads for any size).
   static const String _testBannerIos = 'ca-app-pub-3940256099942544/2934735716';
@@ -18,7 +18,7 @@ class AdIds {
 
   // Real TorqueDen feed MREC (300x250) banner unit. iOS is live; Android is
   // parked, so its real ID is still a placeholder.
-  static const String _realBannerIos = 'ca-app-pub-2582133147245512/3458840764';
+  static const String _realBannerIos = 'ca-app-pub-5912511696757213/5082751920';
   static const String _realBannerAndroid = 'ca-app-pub-0000000000000000/0000000000';
 
   static String get feedBanner {

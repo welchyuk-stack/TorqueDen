@@ -17,7 +17,7 @@
 		<!-- Real TorqueDen AdMob app ID. Ad *unit* IDs stay on Google test IDs while
 	     AdIds.useTestAds = true (dev); flip that to false for release builds. -->
 		<key>GADApplicationIdentifier</key>
-		<string>ca-app-pub-2582133147245512~9185774776</string>
+		<string>ca-app-pub-5912511696757213~5247167790</string>
 		<!-- SKAdNetwork IDs for ad attribution on iOS 14+ (Google AdMob's
 	     recommended set, incl. common mediation partners). Keep in sync with
 	     Google's published list: https://developers.google.com/admob/ios/ios14 -->
