@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TorqueDen — Admin</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="icon" type="image/png" href="../favicon.png">
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --td-ember: #FF6A2B;
+    --td-ember-hover: #F2581C;
+    --td-on-ember: #2A0F04;
+    --td-text: #F3ECE1;
+    --td-text-2: #9AA3AD;
+    --td-text-muted: #8A929C;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background-color: #0C0E11;
+    background-image:
+      radial-gradient(circle at 82% 8%, rgba(255,106,43,0.12) 0%, rgba(255,106,43,0) 40%),
+      radial-gradient(circle at 8% 46%, rgba(55,90,140,0.10) 0%, rgba(55,90,140,0) 42%),
+      repeating-linear-gradient(45deg, #101318 0px, #101318 3px, #0C0E11 3px, #0C0E11 6px),
+      repeating-linear-gradient(-45deg, #13161B 0px, #13161B 1px, transparent 1px, transparent 6px);
+    background-attachment: fixed;
+    color: var(--td-text);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  h1, h2, h3 { font-family: 'Archivo', system-ui, sans-serif; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px; }
+  .glass {
+    background: linear-gradient(180deg, rgba(37,41,47,0.76), rgba(26,30,36,0.66));
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(243,236,225,0.10);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35), 0 2px 8px rgba(0,0,0,0.25);
+    border-radius: 14px;
+  }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 32px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 20px; }
+  .brand img { width: 30px; height: 30px; border-radius: 50%; }
+  .brand .t { color: var(--td-text); } .brand .d { color: var(--td-ember); }
+  .top-actions { display: flex; gap: 10px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px;
+    font-weight: 600; font-size: 13px; border: 1px solid rgba(243,236,225,0.14); cursor: pointer;
+    background: transparent; color: var(--td-text);
+  }
+  .btn:hover { background: rgba(243,236,225,0.06); }
+  .btn-primary { background: var(--td-ember); color: var(--td-on-ember); border-color: transparent; }
+  .btn-primary:hover { background: var(--td-ember-hover); }
+  .btn-sm { padding: 5px 12px; font-size: 12px; }
+
+  #gate { max-width: 420px; margin: 120px auto; padding: 32px; text-align: center; }
+  #gate p { color: var(--td-text-2); margin: 8px 0 20px; font-size: 14px; }
+  #gate input {
+    width: 100%; padding: 12px 14px; border-radius: 8px; border: 1px solid rgba(243,236,225,0.16);
+    background: rgba(0,0,0,0.3); color: var(--td-text); font-size: 14px; margin-bottom: 14px;
+  }
+  #gate-error { color: #E5484D; font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .stat-card { padding: 20px; }
+  .stat-card .label { color: var(--td-text-2); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+  .stat-card .value { font-family: 'Archivo'; font-size: 32px; font-weight: 800; }
+  .stat-card .sub { color: var(--td-text-muted); font-size: 12px; margin-top: 6px; }
+
+  .section-title { font-size: 15px; margin: 32px 0 12px; color: var(--td-text-2); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .panel { padding: 20px; margin-bottom: 20px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid rgba(243,236,225,0.06); font-size: 13px; }
+  .row:last-child { border-bottom: none; }
+  .row .meta { color: var(--td-text-muted); font-size: 12px; }
+  .empty { color: var(--td-text-muted); font-size: 13px; padding: 8px 0; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: rgba(255,106,43,0.15); color: var(--td-ember); }
+  .report-actions { display: flex; gap: 6px; }
+  .revenue-note { color: var(--td-text-muted); font-size: 12px; margin-top: 10px; }
+  .revenue-note a { color: var(--td-ember); }
+  #dashboard { display: none; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <div id="gate" class="glass">
+    <h1 style="font-size:20px; margin-bottom:6px;">Admin access</h1>
+    <p>Enter your admin key to view the dashboard.</p>
+    <input type="password" id="admin-key-input" placeholder="Admin key" autocomplete="off">
+    <button class="btn btn-primary" style="width:100%; justify-content:center;" onclick="unlock()">Unlock</button>
+    <div id="gate-error"></div>
+  </div>
+
+  <div id="dashboard">
+    <header>
+      <div class="brand"><img src="../tyre-logo.png" alt="TorqueDen logo"><span><span class="t">Torque</span><span class="d">Den</span></span> <span style="color:var(--td-text-muted); font-weight:500; font-size:14px; margin-left:6px;">Admin</span></div>
+      <div class="top-actions">
+        <span id="generated-at" style="color:var(--td-text-muted); font-size:12px;"></span>
+        <button class="btn" onclick="load()">Reload</button>
+        <button class="btn" onclick="lock()">Lock</button>
+      </div>
+    </header>
+
+    <div id="error-banner" style="display:none; color:#E5484D; margin-bottom:16px; font-size:13px;"></div>
+
+    <div class="section-title">Users</div>
+    <div class="grid">
+      <div class="stat-card glass"><div class="label">Total users</div><div class="value" id="stat-users-total">—</div></div>
+      <div class="stat-card glass"><div class="label">New (7 days)</div><div class="value" id="stat-users-7d">—</div></div>
+      <div class="stat-card glass"><div class="label">New (30 days)</div><div class="value" id="stat-users-30d">—</div></div>
+    </div>
+
+    <div class="section-title">Clubs</div>
+    <div class="grid">
+      <div class="stat-card glass"><div class="label">Total clubs</div><div class="value" id="stat-clubs-total">—</div></div>
+      <div class="stat-card glass"><div class="label">Public</div><div class="value" id="stat-clubs-public">—</div></div>
+      <div class="stat-card glass"><div class="label">Private</div><div class="value" id="stat-clubs-private">—</div></div>
+    </div>
+
+    <div class="section-title">Content & engagement</div>
+    <div class="grid">
+      <div class="stat-card glass"><div class="label">Cars</div><div class="value" id="stat-cars">—</div></div>
+      <div class="stat-card glass"><div class="label">Build posts</div><div class="value" id="stat-posts">—</div></div>
+      <div class="stat-card glass"><div class="label">Comments</div><div class="value" id="stat-comments">—</div></div>
+      <div class="stat-card glass"><div class="label">Reactions</div><div class="value" id="stat-reactions">—</div></div>
+    </div>
+
+    <div class="section-title">Revenue (subscribers)</div>
+    <div class="grid">
+      <div class="stat-card glass"><div class="label">Premium subscribers</div><div class="value" id="stat-premium">—</div></div>
+      <div class="stat-card glass"><div class="label">Partner subscribers</div><div class="value" id="stat-partner">—</div></div>
+    </div>
+    <div class="revenue-note">
+      These are subscriber counts, not dollar figures. Actual revenue lives in
+      <a href="https://app.revenuecat.com" target="_blank" rel="noopener">RevenueCat</a> (subscriptions) and
+      <a href="https://apps.admob.com" target="_blank" rel="noopener">AdMob</a> (ads) — hook up their APIs later if you want $ figures pulled in here too.
+    </div>
+
+    <div class="section-title">Moderation — open reports (<span id="stat-open-reports">0</span>)</div>
+    <div class="panel glass">
+      <div id="reports-list"></div>
+    </div>
+
+    <div class="section-title">Recent signups</div>
+    <div class="panel glass">
+      <div id="signups-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Point this at your deployed admin-stats function.
+  const FUNCTION_URL = 'https://fadkprreszcttmjjybbz.supabase.co/functions/v1/admin-stats';
+  const STORAGE_KEY = 'td_admin_key';
+
+  function getKey() { return localStorage.getItem(STORAGE_KEY) || ''; }
+  function setKey(k) { localStorage.setItem(STORAGE_KEY, k); }
+  function clearKey() { localStorage.removeItem(STORAGE_KEY); }
+
+  function showGate() {
+    document.getElementById('gate').style.display = 'block';
+    document.getElementById('dashboard').style.display = 'none';
+  }
+  function showDashboard() {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+  }
+
+  function unlock() {
+    const val = document.getElementById('admin-key-input').value.trim();
+    if (!val) return;
+    setKey(val);
+    load();
+  }
+  function lock() {
+    clearKey();
+    showGate();
+  }
+
+  function fmt(n) { return (n ?? 0).toLocaleString(); }
+  function timeAgo(iso) {
+    const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  async function resolveReport(id, status, btn) {
+    btn.disabled = true;
+    try {
+      const res = await fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': getKey() },
+        body: JSON.stringify({ action: 'resolve_report', reportId: id, status }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      load();
+    } catch (e) {
+      alert('Failed to update report: ' + e.message);
+      btn.disabled = false;
+    }
+  }
+
+  async function load() {
+    const key = getKey();
+    if (!key) { showGate(); return; }
+
+    const errBanner = document.getElementById('error-banner');
+    errBanner.style.display = 'none';
+
+    try {
+      const res = await fetch(FUNCTION_URL, { headers: { 'x-admin-key': key } });
+      if (res.status === 401) {
+        document.getElementById('gate-error').textContent = 'Incorrect admin key.';
+        clearKey();
+        showGate();
+        return;
+      }
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+
+      showDashboard();
+      document.getElementById('gate-error').textContent = '';
+      document.getElementById('generated-at').textContent = 'Updated ' + timeAgo(data.generated_at);
+
+      document.getElementById('stat-users-total').textContent = fmt(data.users.total);
+      document.getElementById('stat-users-7d').textContent = fmt(data.users.new_7d);
+      document.getElementById('stat-users-30d').textContent = fmt(data.users.new_30d);
+
+      document.getElementById('stat-clubs-total').textContent = fmt(data.clubs.total);
+      document.getElementById('stat-clubs-public').textContent = fmt(data.clubs.public);
+      document.getElementById('stat-clubs-private').textContent = fmt(data.clubs.private);
+
+      document.getElementById('stat-cars').textContent = fmt(data.content.cars);
+      document.getElementById('stat-posts').textContent = fmt(data.content.posts);
+      document.getElementById('stat-comments').textContent = fmt(data.content.comments);
+      document.getElementById('stat-reactions').textContent = fmt(data.content.reactions);
+
+      document.getElementById('stat-premium').textContent = fmt(data.subscribers.premium);
+      document.getElementById('stat-partner').textContent = fmt(data.subscribers.partner);
+
+      document.getElementById('stat-open-reports').textContent = fmt(data.moderation.open_reports);
+
+      const reportsList = document.getElementById('reports-list');
+      if (!data.reports.length) {
+        reportsList.innerHTML = '<div class="empty">No open reports. Nice and quiet.</div>';
+      } else {
+        reportsList.innerHTML = data.reports.map((r) => `
+          <div class="row">
+            <div>
+              <span class="badge">${r.target_type}</span>
+              <strong style="margin-left:8px;">${r.reason}</strong>
+              <div class="meta">reported by @${r.reporter_username} · ${timeAgo(r.created_at)}${r.note ? ' · "' + r.note.replace(/</g, '&lt;') + '"' : ''}</div>
+            </div>
+            <div class="report-actions">
+              <button class="btn btn-sm" onclick="resolveReport('${r.id}','dismissed', this)">Dismiss</button>
+              <button class="btn btn-sm btn-primary" onclick="resolveReport('${r.id}','resolved', this)">Resolve</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      const signupsList = document.getElementById('signups-list');
+      if (!data.recent_signups.length) {
+        signupsList.innerHTML = '<div class="empty">No signups yet.</div>';
+      } else {
+        signupsList.innerHTML = data.recent_signups.map((u) => `
+          <div class="row"><div>@${u.username}</div><div class="meta">${timeAgo(u.created_at)}</div></div>
+        `).join('');
+      }
+    } catch (e) {
+      errBanner.style.display = 'block';
+      errBanner.textContent = 'Failed to load dashboard: ' + e.message;
+    }
+  }
+
+  document.getElementById('admin-key-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') unlock();
+  });
+
+  if (getKey()) { load(); } else { showGate(); }
+</script>
+
+</body>
+</html>
