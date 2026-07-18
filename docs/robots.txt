@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://torquedenapp.com/sitemap.xml
