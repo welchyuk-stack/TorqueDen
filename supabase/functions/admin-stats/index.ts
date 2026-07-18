@@ -20,28 +20,49 @@ const ADMIN_KEY = Deno.env.get('ADMIN_DASHBOARD_KEY') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://torquedenapp.com',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-admin-key',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-};
+// Allow both http:// and https:// on the domain (the site may still be on
+// http while the GitHub Pages cert finishes issuing), plus the raw GitHub
+// Pages URL as a fallback, and localhost for testing this file directly.
+const ALLOWED_ORIGINS = [
+  'https://torquedenapp.com',
+  'http://torquedenapp.com',
+  'https://www.torquedenapp.com',
+  'http://www.torquedenapp.com',
+  'https://welchyuk-stack.github.io',
+];
 
-function json(body: unknown, status = 200) {
+function corsHeaders(origin: string | null) {
+  const allowOrigin =
+    origin && (ALLOWED_ORIGINS.includes(origin) || origin.startsWith('http://localhost'))
+      ? origin
+      : ALLOWED_ORIGINS[0];
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-admin-key',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    Vary: 'Origin',
+  };
+}
+
+function json(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json', ...CORS_HEADERS },
+    headers: { 'Content-Type': 'application/json', ...headers },
   });
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
+  const headers = corsHeaders(req.headers.get('origin'));
+  const j = (body: unknown, status = 200) => json(body, status, headers);
+
+  if (req.method === 'OPTIONS') return new Response(null, { headers });
 
   // 1. Gate on the shared admin key. Constant-time-ish check isn't critical
   // here (single operator, low-value timing attack), but length check first
   // avoids the common empty-secret misconfiguration footgun.
   const key = req.headers.get('x-admin-key') ?? '';
   if (!ADMIN_KEY || key !== ADMIN_KEY) {
-    return json({ error: 'Unauthorized' }, 401);
+    return j({ error: 'Unauthorized' }, 401);
   }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -52,23 +73,23 @@ Deno.serve(async (req) => {
     try {
       body = await req.json();
     } catch {
-      return json({ error: 'Bad request' }, 400);
+      return j({ error: 'Bad request' }, 400);
     }
 
     if (body?.action === 'resolve_report') {
       const { reportId, status } = body;
       if (!reportId || !['resolved', 'dismissed'].includes(status)) {
-        return json({ error: 'Invalid resolve_report payload' }, 400);
+        return j({ error: 'Invalid resolve_report payload' }, 400);
       }
       const { error } = await supabase
         .from('reports')
         .update({ status })
         .eq('id', reportId);
-      if (error) return json({ error: error.message }, 500);
-      return json({ ok: true });
+      if (error) return j({ error: error.message }, 500);
+      return j({ ok: true });
     }
 
-    return json({ error: 'Unknown action' }, 400);
+    return j({ error: 'Unknown action' }, 400);
   }
 
   // --- Read stats -----------------------------------------------------------
@@ -143,7 +164,7 @@ Deno.serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(10);
 
-    return json({
+    return j({
       generated_at: new Date().toISOString(),
       users: { total: totalUsers, new_7d: newUsers7d, new_30d: newUsers30d },
       clubs: { total: totalClubs, public: publicClubs, private: totalClubs - publicClubs },
@@ -154,6 +175,6 @@ Deno.serve(async (req) => {
       recent_signups: recentSignups ?? [],
     });
   } catch (e) {
-    return json({ error: String(e) }, 500);
+    return j({ error: String(e) }, 500);
   }
 });
