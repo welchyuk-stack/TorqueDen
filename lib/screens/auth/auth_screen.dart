@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/services/guest_mode.dart';
 import 'package:torqueden/support_links.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/open_link.dart';
@@ -15,7 +16,10 @@ const String kResetRedirect = 'io.torqueden://reset-callback';
 /// pushing separate routes) keeps things simple: when auth succeeds, the
 /// AuthGate above swaps this whole screen out for the app automatically.
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  const AuthScreen({super.key, this.initialLogin = true});
+
+  /// When false, the screen opens in sign-up mode (e.g. from "Create account").
+  final bool initialLogin;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -27,8 +31,15 @@ class _AuthScreenState extends State<AuthScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
 
-  bool _isLogin = true;
+  late bool _isLogin;
   bool _loading = false;
+  bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _isLogin = widget.initialLogin;
+  }
 
   @override
   void dispose() {
@@ -49,15 +60,22 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       if (_isLogin) {
         await auth.signInWithPassword(email: email, password: password);
-        // Success → AuthGate rebuilds into the app automatically.
+        if (mounted) {
+          GuestMode.clear();
+          Navigator.of(context).popUntil((r) => r.isFirst);
+        }
       } else {
         final res = await auth.signUp(
           email: email,
           password: password,
           data: {'username': _username.text.trim()},
         );
-        // If email confirmation is on, there's no session yet.
-        if (res.session == null && mounted) {
+        if (res.session != null && mounted) {
+          // Signed up and auto-confirmed — go straight in.
+          GuestMode.clear();
+          Navigator.of(context).popUntil((r) => r.isFirst);
+        } else if (mounted) {
+          // Email confirmation required.
           _showMessage('Account created. Check your email to confirm, then log in.');
           setState(() => _isLogin = true);
         }
@@ -97,7 +115,19 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
     return Scaffold(
+      appBar: canPop
+          ? AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new),
+                color: AppColors.steel,
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -120,7 +150,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 40),
                     Text(
                       _isLogin ? 'Log in' : 'Create your account',
-                      style: GoogleFonts.archivo(
+                      style: GoogleFonts.spaceGrotesk(
                         fontSize: 22,
                         fontWeight: FontWeight.w700,
                         color: AppColors.cream,
@@ -160,14 +190,30 @@ class _AuthScreenState extends State<AuthScreen> {
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _password,
-                      obscureText: true,
+                      obscureText: _obscure,
                       textInputAction: TextInputAction.done,
                       onFieldSubmitted: (_) {
                         if (!_loading) _submit();
                       },
-                      decoration: const InputDecoration(labelText: 'Password'),
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                            color: AppColors.steel,
+                            size: 20,
+                          ),
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                        ),
+                      ),
                       validator: (v) {
-                        if ((v ?? '').length < 6) return 'At least 6 characters';
+                        final value = v ?? '';
+                        // Only new passwords get the stronger minimum — applying
+                        // it at login would lock out existing shorter passwords.
+                        if (_isLogin) {
+                          return value.isEmpty ? 'Enter your password' : null;
+                        }
+                        if (value.length < 8) return 'At least 8 characters';
                         return null;
                       },
                     ),
@@ -200,6 +246,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       _ConsentLine(
                         onTerms: () => openLink(context, SupportLinks.termsUrl),
                         onPrivacy: () => openLink(context, SupportLinks.privacyPolicyUrl),
+                        onGuidelines: () => openLink(context, SupportLinks.communityGuidelinesUrl),
                       ),
                     ],
                     const SizedBox(height: 16),
@@ -216,6 +263,38 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    Center(
+                      child: Column(
+                        children: [
+                          TextButton(
+                            onPressed: _loading
+                                ? null
+                                : () {
+                                    GuestMode.enable();
+                                    if (Navigator.of(context).canPop()) {
+                                      Navigator.of(context).pop();
+                                    }
+                                  },
+                            child: Text(
+                              'Browse as guest',
+                              style: GoogleFonts.inter(
+                                color: AppColors.textMuted,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            'Read-only — some features require an account',
+                            style: GoogleFonts.inter(
+                              color: AppColors.textMuted.withValues(alpha: 0.6),
+                              fontSize: 11,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -230,9 +309,10 @@ class _AuthScreenState extends State<AuthScreen> {
 /// "By creating an account you agree to our Terms and Privacy Policy" with the
 /// two documents tappable.
 class _ConsentLine extends StatelessWidget {
-  const _ConsentLine({required this.onTerms, required this.onPrivacy});
+  const _ConsentLine({required this.onTerms, required this.onPrivacy, required this.onGuidelines});
   final VoidCallback onTerms;
   final VoidCallback onPrivacy;
+  final VoidCallback onGuidelines;
 
   @override
   Widget build(BuildContext context) {
@@ -243,9 +323,11 @@ class _ConsentLine extends StatelessWidget {
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text('By creating an account you agree to our ', style: muted),
-        GestureDetector(onTap: onTerms, child: Text('Terms', style: link)),
+        InkWell(onTap: onTerms, child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('Terms', style: link))),
+        Text(', ', style: muted),
+        InkWell(onTap: onPrivacy, child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('Privacy Policy', style: link))),
         Text(' and ', style: muted),
-        GestureDetector(onTap: onPrivacy, child: Text('Privacy Policy', style: link)),
+        InkWell(onTap: onGuidelines, child: Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('Community Guidelines', style: link))),
         Text('.', style: muted),
       ],
     );
