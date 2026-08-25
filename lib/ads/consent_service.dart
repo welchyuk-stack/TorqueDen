@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:app_tracking_transparency/app_tracking_transparency.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
@@ -32,6 +33,10 @@ class ConsentService {
   Future<void> ensureReady() => _pending ??= _run();
 
   Future<void> _run() async {
+    if (kIsWeb) {
+      _canRequestAds = false;
+      return;
+    }
     // 1. UMP: refresh consent info and show the form where the region requires
     //    it. Failures fall through — we still init ads (non-personalised).
     try {

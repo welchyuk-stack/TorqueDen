@@ -1,10 +1,12 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/image_compress.dart';
 import 'package:torqueden/utils/link_guard.dart';
 
 /// Name of the public Supabase Storage bucket that holds car photos.
@@ -36,6 +38,7 @@ class _AddCarScreenState extends State<AddCarScreen> {
   final _description = TextEditingController();
 
   bool _saving = false;
+  bool _shareEnabled = true;
 
   // Photo state. _pickedBytes holds a freshly chosen image (not yet uploaded);
   // otherwise we fall back to the car's existing photoUrl when editing.
@@ -56,6 +59,7 @@ class _AddCarScreenState extends State<AddCarScreen> {
       _nickname.text = car.nickname ?? '';
       _color.text = car.color ?? '';
       _description.text = car.description ?? '';
+      _shareEnabled = car.shareEnabled;
     }
   }
 
@@ -78,7 +82,8 @@ class _AddCarScreenState extends State<AddCarScreen> {
       imageQuality: 85,
     );
     if (picked == null) return;
-    final bytes = await picked.readAsBytes();
+    final raw = await picked.readAsBytes();
+    final bytes = await compressImageBytes(raw);
     if (mounted) {
       setState(() {
         _pickedBytes = bytes;
@@ -150,7 +155,6 @@ class _AddCarScreenState extends State<AddCarScreen> {
     final nickname = _nickname.text.trim();
     final color = _color.text.trim();
     final description = _description.text.trim();
-
     final payload = {
       'make': _make.text.trim(),
       'model': _model.text.trim(),
@@ -161,7 +165,8 @@ class _AddCarScreenState extends State<AddCarScreen> {
       'description': description.isEmpty ? null : description,
       // Only overwrite the photo when a new one was picked; keep the old one
       // otherwise (don't send null and wipe it on an edit).
-      'photo_url': ?uploadedUrl,
+      if (uploadedUrl != null) 'photo_url': uploadedUrl,
+      'share_enabled': _shareEnabled,
     };
 
     try {
@@ -210,13 +215,27 @@ class _AddCarScreenState extends State<AddCarScreen> {
     int maxLines = 1,
     String? Function(String?)? validator,
   }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      textCapitalization: textCapitalization,
-      maxLines: maxLines,
-      validator: validator,
-      decoration: InputDecoration(labelText: label, hintText: hint),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          textCapitalization: textCapitalization,
+          maxLines: maxLines,
+          validator: validator,
+          decoration: InputDecoration(hintText: hint),
+        ),
+      ],
     );
   }
 
@@ -241,31 +260,77 @@ class _AddCarScreenState extends State<AddCarScreen> {
                     onTap: _saving ? null : _pickPhoto,
                   ),
                   const SizedBox(height: 20),
-                  _field(_make, 'Make *',
-                      hint: 'e.g. BMW',
-                      textCapitalization: TextCapitalization.words,
-                      validator: _required),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _field(_make, 'Make *',
+                          hint: 'BMW',
+                          textCapitalization: TextCapitalization.words,
+                          validator: _required)),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_model, 'Model *',
+                          hint: 'M2',
+                          textCapitalization: TextCapitalization.words,
+                          validator: _required)),
+                    ],
+                  ),
                   const SizedBox(height: 14),
-                  _field(_model, 'Model *',
-                      hint: 'e.g. M2',
-                      textCapitalization: TextCapitalization.words,
-                      validator: _required),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _field(_chassis, 'Chassis',
+                          hint: 'G87',
+                          textCapitalization: TextCapitalization.characters)),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_year, 'Year',
+                          hint: '2023',
+                          keyboardType: TextInputType.number,
+                          validator: _yearValidator)),
+                    ],
+                  ),
                   const SizedBox(height: 14),
-                  _field(_chassis, 'Chassis Model',
-                      hint: 'e.g. G87',
-                      textCapitalization: TextCapitalization.characters),
-                  const SizedBox(height: 14),
-                  _field(_year, 'Year',
-                      hint: 'e.g. 2023',
-                      keyboardType: TextInputType.number,
-                      validator: _yearValidator),
-                  const SizedBox(height: 14),
-                  _field(_nickname, 'Nickname (optional)', hint: 'e.g. Project Apex'),
-                  const SizedBox(height: 14),
-                  _field(_color, 'Colour', hint: 'e.g. Black Sapphire Metallic'),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: _field(_nickname, 'Nickname', hint: 'Project Apex')),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_color, 'Color', hint: 'Black Sapphire Metallic')),
+                    ],
+                  ),
                   const SizedBox(height: 14),
                   _field(_description, 'Notes',
                       hint: 'Anything about the build…', maxLines: 4),
+                  const SizedBox(height: 14),
+                  Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.graphiteRaised,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.hairline, width: 0.8),
+                      ),
+                      child: SwitchListTile(
+                        title: Text(
+                          'Public share link',
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.cream,
+                          ),
+                        ),
+                        subtitle: Text(
+                          'Allow anyone to view this build via a link',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                        value: _shareEnabled,
+                        onChanged: (v) => setState(() => _shareEnabled = v),
+                        activeThumbColor: AppColors.ember,
+                        activeTrackColor: AppColors.ember.withValues(alpha: 0.4),
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                      ),
+                    ),
                   const SizedBox(height: 24),
                   FilledButton(
                     onPressed: _saving ? null : _save,
@@ -332,15 +397,15 @@ class _PhotoPicker extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
+                      color: AppColors.ember,
                       borderRadius: BorderRadius.circular(999),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.photo_camera_outlined, size: 16, color: AppColors.cream),
+                        Icon(Icons.photo_camera_outlined, size: 16, color: AppColors.onEmber),
                         SizedBox(width: 6),
-                        Text('Change', style: TextStyle(color: AppColors.cream, fontSize: 13)),
+                        Text('Change', style: TextStyle(color: AppColors.onEmber, fontSize: 13, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -354,11 +419,8 @@ class _PhotoPicker extends StatelessWidget {
 
   Widget _buildPrompt() {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.hairline),
-      ),
-      child: const Column(
+      decoration: AppDecorations.glassCard(radius: 12),
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.add_a_photo_outlined, size: 34, color: AppColors.steel),

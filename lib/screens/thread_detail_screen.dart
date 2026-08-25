@@ -166,6 +166,23 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
   }
 
   Future<void> _deleteReply(ClubReply reply) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Delete reply?',
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: Text('This can\'t be undone.',
+            style: GoogleFonts.inter(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Delete', style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     try {
       await _client.from('club_replies').delete().eq('id', reply.id);
       await _refresh();
@@ -224,7 +241,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
                     // The question / opening post.
                     Text(
                       t.title,
-                      style: GoogleFonts.archivo(
+                      style: GoogleFonts.spaceGrotesk(
                           fontSize: 21, fontWeight: FontWeight.w700, color: AppColors.cream, height: 1.2),
                     ),
                     const SizedBox(height: 6),
@@ -248,7 +265,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
                               fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.steel),
                         ),
                         const SizedBox(width: 10),
-                        const Expanded(child: Divider(color: AppColors.hairline)),
+                        Expanded(child: Divider(color: AppColors.hairline)),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -260,8 +277,17 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
                     else if (_error != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 24),
-                        child: Text('Could not load replies.\n$_error',
-                            style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                        child: Column(
+                          children: [
+                            Text('Could not load replies.',
+                                style: GoogleFonts.inter(fontSize: 14, color: AppColors.textMuted)),
+                            const SizedBox(height: 12),
+                            FilledButton(
+                              onPressed: () => setState(() { _error = null; _refresh(); }),
+                              child: const Text('Try again'),
+                            ),
+                          ],
+                        ),
                       )
                     else if (_replies.isEmpty)
                       Padding(
@@ -292,7 +318,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
                 padding: const EdgeInsets.all(16),
                 color: AppColors.graphite,
                 child: Text(
-                  'Join the club to reply.',
+                  'Join the forum to reply.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted),
                 ),
@@ -307,7 +333,7 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
     return Container(
       padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + bottom),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.graphite,
         border: Border(top: BorderSide(color: AppColors.hairline)),
       ),
@@ -332,8 +358,8 @@ class _ThreadDetailScreenState extends State<ThreadDetailScreen> {
                   InkWell(
                     onTap: _cancelReply,
                     borderRadius: BorderRadius.circular(12),
-                    child: const Padding(
-                      padding: EdgeInsets.all(2),
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
                       child: Icon(Icons.close, size: 16, color: AppColors.steel),
                     ),
                   ),
@@ -429,7 +455,11 @@ class _ReplyTile extends StatelessWidget {
                     if (canDelete)
                       GestureDetector(
                         onTap: onDelete,
-                        child: const Icon(Icons.delete_outline, size: 18, color: AppColors.steel),
+                        behavior: HitTestBehavior.opaque,
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Icon(Icons.delete_outline, size: 18, color: AppColors.steel),
+                        ),
                       ),
                   ],
                 ),
@@ -547,7 +577,7 @@ class _Avatar extends StatelessWidget {
     return Container(
       width: 34,
       height: 34,
-      decoration: const BoxDecoration(color: AppColors.graphiteRaised, shape: BoxShape.circle),
+      decoration: BoxDecoration(color: AppColors.graphiteRaised, shape: BoxShape.circle),
       alignment: Alignment.center,
       child: Text(letter,
           style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.steel)),

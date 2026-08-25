@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/services/guest_mode.dart';
+import 'package:torqueden/services/turnstile.dart';
 import 'package:torqueden/support_links.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/open_link.dart';
@@ -57,9 +58,27 @@ class _AuthScreenState extends State<AuthScreen> {
     final email = _email.text.trim();
     final password = _password.text;
 
+    // No-op while Turnstile is unconfigured; returns null and the calls below
+    // behave exactly as before. Once enabled, a dismissed sheet aborts rather
+    // than falling through — GoTrue would reject a tokenless request anyway.
+    String? captcha;
+    if (TurnstileConfig.enabled) {
+      captcha = await obtainTurnstileToken(context);
+      if (!mounted) return;
+      if (captcha == null) {
+        setState(() => _loading = false);
+        _showMessage('Could not verify you\'re human. Please try again.');
+        return;
+      }
+    }
+
     try {
       if (_isLogin) {
-        await auth.signInWithPassword(email: email, password: password);
+        await auth.signInWithPassword(
+          email: email,
+          password: password,
+          captchaToken: captcha,
+        );
         if (mounted) {
           GuestMode.clear();
           Navigator.of(context).popUntil((r) => r.isFirst);
@@ -69,6 +88,7 @@ class _AuthScreenState extends State<AuthScreen> {
           email: email,
           password: password,
           data: {'username': _username.text.trim()},
+          captchaToken: captcha,
         );
         if (res.session != null && mounted) {
           // Signed up and auto-confirmed — go straight in.
@@ -96,9 +116,26 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
     setState(() => _loading = true);
+
+    // Reset is the cheapest endpoint to abuse for mailbombing, so it takes the
+    // same check as signup and login.
+    String? captcha;
+    if (TurnstileConfig.enabled) {
+      captcha = await obtainTurnstileToken(context);
+      if (!mounted) return;
+      if (captcha == null) {
+        setState(() => _loading = false);
+        _showMessage('Could not verify you\'re human. Please try again.');
+        return;
+      }
+    }
+
     try {
-      await Supabase.instance.client.auth
-          .resetPasswordForEmail(email, redirectTo: kResetRedirect);
+      await Supabase.instance.client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: kResetRedirect,
+        captchaToken: captcha,
+      );
       if (mounted) _showMessage('Password reset link sent to $email. Check your inbox.');
     } on AuthException catch (e) {
       if (mounted) _showMessage(e.message);

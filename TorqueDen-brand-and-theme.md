@@ -79,16 +79,17 @@ Dark-mode-first. The app canvas is dark; **Ember is the single hot accent** — 
 
 | Token | Hex | Use |
 |-------|-----|-----|
-| Carbon | `#15171B` | App background / ink |
-| Graphite | `#1C2026` | Card surface |
+| Carbon | `#15171B` | Deep ink — scrims, banners |
+| Canvas | `#0C0E11` | App background: matte carbon-fibre weave (2×2 twill, near-subliminal) with faint ember + steel ambient glows |
+| Graphite | `#1C2026` | Card surface (rendered translucent ~65% over the canvas — liquid glass) |
 | Graphite raised | `#23272E` | Elevated wells (media, inputs) |
 | Hairline | `#2C313A` | Borders / dividers |
 | Ember | `#FF6A2B` | Primary accent, CTAs, active, "flame" |
 | Ember hover | `#F2581C` | Accent hover / pressed |
 | Steel | `#7C8B99` | Secondary accent, inactive |
 | Cream | `#F3ECE1` | Primary text, light marks |
-| Text secondary | `#9AA3AD` | Secondary text |
-| Text muted | `#8A929C` | Muted text / labels |
+| Text secondary | `#A8B1BB` | Secondary text |
+| Text muted | `#9AA3AD` | Muted text / labels (bumped a step for outdoor legibility) |
 | On-ember | `#2A0F04` | Text + icons on ember fills |
 
 **Functional / status** (kept restrained)
@@ -212,7 +213,9 @@ Headings are sentence case (never Title Case). The wordmark keeps its native cas
 
 - Dark-mode-first. A light theme is optional later (invert surfaces, darken text, keep Ember).
 - Ember is an accent, not a background — the "single hot spark" is the point.
-- Keep the UI flat and content-forward: the builds are the hero, the chrome stays quiet.
+- Keep the UI content-forward: the builds are the hero, the chrome stays quiet.
+- **Liquid glass:** the canvas is a matte carbon-fibre weave with faint ambient glows; surfaces above it are translucent graphite with a hairline rim (brighter top edge). Real backdrop blur only on singleton chrome (the floating tab bar) — never per-card, which stutters on mid-range Android; cards fake it with a translucent fill.
+- The create button is a solid ember hex nut (specular top edge, soft glow), flush inside the tab bar pill.
 
 ---
 

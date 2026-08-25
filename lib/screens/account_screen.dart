@@ -5,7 +5,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/screens/add_car_screen.dart' show kCarPhotosBucket;
+import 'package:torqueden/screens/admin_screen.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/widgets/settings_group.dart';
+
+// Supabase UID for the torqueden admin account.
+const _kAdminUid = '807e6e7c-ebe7-49d3-b774-ad9a75be86f9';
 
 /// Account settings: edit your profile (avatar, display name, username, bio) and
 /// manage login credentials (email + password). All wired to Supabase.
@@ -63,6 +68,17 @@ class _AccountScreenState extends State<AccountScreen> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
+  // Extracts the storage path from a public URL and deletes the object.
+  // Silently swallowed — old-file cleanup must never block or surface errors.
+  void _deleteOldStorageFile(String? publicUrl) {
+    if (publicUrl == null || publicUrl.isEmpty) return;
+    final marker = '/object/public/$kCarPhotosBucket/';
+    final idx = publicUrl.indexOf(marker);
+    if (idx == -1) return;
+    final storagePath = Uri.decodeFull(publicUrl.substring(idx + marker.length));
+    _client.storage.from(kCarPhotosBucket).remove([storagePath]).ignore();
+  }
+
   Future<void> _pickAvatar() async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -91,6 +107,8 @@ class _AccountScreenState extends State<AccountScreen> {
               fileOptions: const FileOptions(contentType: 'image/jpeg'),
             );
         avatarUrl = _client.storage.from(kCarPhotosBucket).getPublicUrl(path);
+        // Delete the old avatar (best-effort — don't block the save).
+        _deleteOldStorageFile(_avatarUrl);
       }
       final display = _displayName.text.trim();
       final bio = _bio.text.trim();
@@ -98,7 +116,7 @@ class _AccountScreenState extends State<AccountScreen> {
         'username': username,
         'display_name': display.isEmpty ? null : display,
         'bio': bio.isEmpty ? null : bio,
-        'avatar_url': ?avatarUrl,
+        if (avatarUrl != null) 'avatar_url': avatarUrl,
       }).eq('id', _uid);
       if (!mounted) return;
       setState(() {
@@ -118,21 +136,19 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _changeEmail() async {
-    final controller = TextEditingController(text: _email ?? '');
     final newEmail = await showDialog<String>(
       context: context,
       builder: (ctx) => _InputDialog(
         title: 'Change email',
         message: 'We\'ll send a confirmation link to the new address. The change '
             'takes effect once you confirm it.',
-        controller: controller,
+        initialValue: _email ?? '',
         label: 'New email',
         keyboardType: TextInputType.emailAddress,
         actionLabel: 'Send link',
         validate: (v) => (v.contains('@') && v.contains('.')) ? null : 'Enter a valid email',
       ),
     );
-    controller.dispose();
     if (newEmail == null) return;
     try {
       await _client.auth.updateUser(UserAttributes(email: newEmail.trim()));
@@ -161,15 +177,15 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 
   Future<void> _deleteAccount() async {
-    final confirmed = await showDialog<bool>(
+    final first = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.graphite,
         title: Text('Delete your account?',
-            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
         content: Text(
           'This permanently deletes your account and everything tied to it — your '
-          'cars and build logs, posts, clubs you own, and comments. This can\'t be '
+          'cars and build logs, posts, forums you own, and comments. This can\'t be '
           'undone.',
           style: GoogleFonts.inter(color: AppColors.textSecondary, height: 1.5),
         ),
@@ -180,8 +196,33 @@ class _AccountScreenState extends State<AccountScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete account',
+            child: Text('Continue',
                 style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (first != true || !mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Are you absolutely sure?',
+            style: GoogleFonts.spaceGrotesk(color: AppColors.danger, fontWeight: FontWeight.w700)),
+        content: Text(
+          'Your account, all your cars, posts, and data will be permanently deleted. '
+          'This cannot be undone.',
+          style: GoogleFonts.inter(color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            child: Text('Delete account', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -303,21 +344,43 @@ class _AccountScreenState extends State<AccountScreen> {
                 Text('LOGIN & SECURITY',
                     style: GoogleFonts.inter(
                         color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
-                const SizedBox(height: 4),
-                _row(
-                  icon: Icons.alternate_email,
-                  title: 'Email',
-                  subtitle: _email ?? 'Not set',
-                  actionLabel: 'Change',
-                  onTap: _changeEmail,
+                const SizedBox(height: 8),
+                SettingsGroup(
+                  children: [
+                    _row(
+                      icon: Icons.alternate_email,
+                      title: 'Email',
+                      subtitle: _email ?? 'Not set',
+                      actionLabel: 'Change',
+                      onTap: _changeEmail,
+                    ),
+                    _row(
+                      icon: Icons.lock_outline,
+                      title: 'Password',
+                      subtitle: '••••••••',
+                      actionLabel: 'Change',
+                      onTap: _changePassword,
+                    ),
+                  ],
                 ),
-                _row(
-                  icon: Icons.lock_outline,
-                  title: 'Password',
-                  subtitle: '••••••••',
-                  actionLabel: 'Change',
-                  onTap: _changePassword,
-                ),
+                if (_uid == _kAdminUid) ...[
+                  const SizedBox(height: 28),
+                  Text('ADMIN',
+                      style: GoogleFonts.inter(
+                          color: AppColors.textMuted, fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.4)),
+                  const SizedBox(height: 8),
+                  SettingsGroup(
+                    children: [
+                      ListTile(
+                        leading: Icon(Icons.admin_panel_settings_outlined, color: AppColors.ember),
+                        title: Text('Platform Admin', style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                        subtitle: Text('Ban / unban users globally', style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                        trailing: Icon(Icons.chevron_right, color: AppColors.steel),
+                        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminScreen())),
+                      ),
+                    ],
+                  ),
+                ],
                 const SizedBox(height: 28),
                 Text('DANGER ZONE',
                     style: GoogleFonts.inter(
@@ -383,11 +446,13 @@ class _AccountScreenState extends State<AccountScreen> {
       alignment: Alignment.center,
       child: Text(
         seed.isNotEmpty ? seed[0].toUpperCase() : '?',
-        style: GoogleFonts.archivo(fontSize: 36, fontWeight: FontWeight.w800, color: AppColors.ember),
+        style: GoogleFonts.spaceGrotesk(fontSize: 36, fontWeight: FontWeight.w800, color: AppColors.ember),
       ),
     );
   }
 
+  // Bare row — the surrounding [SettingsGroup] provides the glass surface
+  // and dividers, matching the Settings screens.
   Widget _row({
     required IconData icon,
     required String title,
@@ -395,26 +460,18 @@ class _AccountScreenState extends State<AccountScreen> {
     required String actionLabel,
     required VoidCallback onTap,
   }) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: ListTile(
-        tileColor: AppColors.graphite,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: AppColors.hairline),
-        ),
-        leading: Icon(icon, color: AppColors.steel),
-        title: Text(title, style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-        subtitle: Text(subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
-        trailing: TextButton(
-          onPressed: onTap,
-          child: Text(actionLabel, style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),
-        ),
-        onTap: onTap,
+    return ListTile(
+      leading: Icon(icon, color: AppColors.steel),
+      title: Text(title, style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+      subtitle: Text(subtitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+      trailing: TextButton(
+        onPressed: onTap,
+        child: Text(actionLabel, style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),
       ),
+      onTap: onTap,
     );
   }
 }
@@ -423,9 +480,9 @@ class _AccountScreenState extends State<AccountScreen> {
 class _InputDialog extends StatefulWidget {
   const _InputDialog({
     required this.title,
-    required this.controller,
     required this.label,
     required this.actionLabel,
+    this.initialValue = '',
     this.message,
     this.keyboardType,
     this.validate,
@@ -433,7 +490,7 @@ class _InputDialog extends StatefulWidget {
 
   final String title;
   final String? message;
-  final TextEditingController controller;
+  final String initialValue;
   final String label;
   final String actionLabel;
   final TextInputType? keyboardType;
@@ -444,10 +501,23 @@ class _InputDialog extends StatefulWidget {
 }
 
 class _InputDialogState extends State<_InputDialog> {
+  late final TextEditingController _ctrl;
   String? _error;
 
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
   void _submit() {
-    final value = widget.controller.text.trim();
+    final value = _ctrl.text.trim();
     final err = widget.validate?.call(value);
     if (err != null) { setState(() { _error = err; }); return; }
     Navigator.pop(context, value);
@@ -458,7 +528,7 @@ class _InputDialogState extends State<_InputDialog> {
     return AlertDialog(
       backgroundColor: AppColors.graphite,
       title: Text(widget.title,
-          style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+          style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -468,7 +538,7 @@ class _InputDialogState extends State<_InputDialog> {
             const SizedBox(height: 16),
           ],
           TextField(
-            controller: widget.controller,
+            controller: _ctrl,
             keyboardType: widget.keyboardType,
             autofocus: true,
             style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
@@ -519,7 +589,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
     return AlertDialog(
       backgroundColor: AppColors.graphite,
       title: Text('Change password',
-          style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+          style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -158,7 +158,7 @@ class _ClubMembersScreenState extends State<ClubMembersScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.graphite,
         title: Text('Make $name the owner?',
-            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
         content: Text('You\'ll become a regular member and lose admin control of this club.',
             style: GoogleFonts.inter(color: AppColors.textSecondary)),
         actions: [
@@ -212,11 +212,11 @@ class _ClubMembersScreenState extends State<ClubMembersScreen> {
                     filled: true,
                     fillColor: AppColors.graphiteRaised,
                     hintText: 'Search members…',
-                    prefixIcon: const Icon(Icons.search, color: AppColors.steel),
+                    prefixIcon: Icon(Icons.search, color: AppColors.steel),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.hairline),
+                      borderSide: BorderSide(color: AppColors.hairline),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(14),
@@ -302,7 +302,7 @@ class _MemberRow extends StatelessWidget {
         children: [
           Container(
             width: 36, height: 36,
-            decoration: const BoxDecoration(color: AppColors.graphiteRaised, shape: BoxShape.circle),
+            decoration: BoxDecoration(color: AppColors.graphiteRaised, shape: BoxShape.circle),
             alignment: Alignment.center,
             child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
                 style: GoogleFonts.inter(color: AppColors.steel, fontWeight: FontWeight.w700)),
@@ -321,7 +321,7 @@ class _MemberRow extends StatelessWidget {
             Text('Owner', style: GoogleFonts.inter(color: AppColors.ember, fontSize: 12, fontWeight: FontWeight.w700))
           else
             PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: AppColors.steel, size: 20),
+              icon: Icon(Icons.more_vert, color: AppColors.steel, size: 20),
               color: AppColors.graphiteRaised,
               onSelected: (v) => switch (v) {
                 'owner' => onMakeOwner(),

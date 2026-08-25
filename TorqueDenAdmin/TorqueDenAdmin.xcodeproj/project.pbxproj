@@ -1,0 +1,491 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+		DD000000020000000000000001 /* App/AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000010000000000000001; };
+		DD000000040000000000000001 /* App/AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000030000000000000001; };
+		DD000000060000000000000001 /* App/TorqueDenAdminApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000050000000000000001; };
+		DD000000080000000000000001 /* Data/AdminAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000070000000000000001; };
+		DD0000000A0000000000000001 /* Data/KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000090000000000000001; };
+		DD0000000C0000000000000001 /* Data/Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000B0000000000000001; };
+		DD0000000E0000000000000001 /* Data/ModerationPollService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000D0000000000000001; };
+		DD000000100000000000000001 /* MenuBar/MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000000F0000000000000001; };
+		DD000000120000000000000001 /* Navigation/ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000110000000000000001; };
+		DD000000140000000000000001 /* Navigation/NavigationDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000130000000000000001; };
+		DD000000160000000000000001 /* Navigation/SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000150000000000000001; };
+		DD000000180000000000000001 /* Notifications/NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000170000000000000001; };
+		DD0000001A0000000000000001 /* Screens/Broadcast/BroadcastHistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000190000000000000001; };
+		DD0000001C0000000000000001 /* Screens/Broadcast/BroadcastView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000001B0000000000000001; };
+		DD0000001E0000000000000001 /* Screens/Broadcast/BroadcastViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000001D0000000000000001; };
+		DD000000200000000000000001 /* Screens/Moderation/ContentTypeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000001F0000000000000001; };
+		DD000000220000000000000001 /* Screens/Moderation/ModerationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000210000000000000001; };
+		DD000000240000000000000001 /* Screens/Moderation/ModerationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000230000000000000001; };
+		DD000000260000000000000001 /* Screens/Moderation/ReportDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000250000000000000001; };
+		DD000000280000000000000001 /* Screens/Moderation/ReportListRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000270000000000000001; };
+		DD0000002A0000000000000001 /* Screens/Overview/OverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000290000000000000001; };
+		DD0000002C0000000000000001 /* Screens/Overview/OverviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000002B0000000000000001; };
+		DD0000002E0000000000000001 /* Screens/Overview/StatTileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000002D0000000000000001; };
+		DD000000300000000000000001 /* Screens/Overview/UsageRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000002F0000000000000001; };
+		DD000000320000000000000001 /* Screens/RecentSignups/RecentSignupRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000310000000000000001; };
+		DD000000340000000000000001 /* Screens/RecentSignups/RecentSignupsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000330000000000000001; };
+		DD000000360000000000000001 /* Screens/Settings/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000350000000000000001; };
+		DD000000380000000000000001 /* Utilities/ByteFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000370000000000000001; };
+		DD0000003A0000000000000001 /* Utilities/DateFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000390000000000000001; };
+		DD0000003C0000000000000001 /* Utilities/Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000003B0000000000000001; };
+		DD000000410000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DD000000400000000000000001; };
+		DD0000005D0000000000000001 /* Data/CloudflareAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000005C0000000000000001; };
+		DD0000005F0000000000000001 /* Screens/Website/WebsiteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000005E0000000000000001; };
+		DD000000610000000000000001 /* Screens/Website/WebsiteViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000600000000000000001; };
+		DD000000640000000000000001 /* Screens/Content/ContentBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000630000000000000001; };
+		DD000000660000000000000001 /* Screens/Content/ContentBrowserViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000650000000000000001; };
+		DD000000690000000000000001 /* Screens/Users/UsersView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000680000000000000001; };
+		DD0000006B0000000000000001 /* Screens/Users/UsersViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000006A0000000000000001; };
+		DD0000006D0000000000000001 /* Screens/Challenges/ChallengesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD0000006E0000000000000001; };
+		DD0000006F0000000000000001 /* Screens/Challenges/ChallengeDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000700000000000000001; };
+		DD000000710000000000000001 /* Screens/Challenges/ChallengeFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000720000000000000001; };
+		DD000000A10000000000000001 /* Screens/Challenges/ShotThemeQueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000A20000000000000001; };
+		DD000000A30000000000000001 /* Screens/Challenges/ShotThemeFormView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD000000A40000000000000001; };
+
+		DD000000010000000000000001 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = "App/AppDelegate.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000030000000000000001 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppState.swift; path = "App/AppState.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000050000000000000001 /* TorqueDenAdminApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TorqueDenAdminApp.swift; path = "App/TorqueDenAdminApp.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000070000000000000001 /* AdminAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AdminAPIClient.swift; path = "Data/AdminAPIClient.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000090000000000000001 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = KeychainService.swift; path = "Data/KeychainService.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000000B0000000000000001 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Models.swift; path = "Data/Models.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000000D0000000000000001 /* ModerationPollService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ModerationPollService.swift; path = "Data/ModerationPollService.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000000F0000000000000001 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MenuBarController.swift; path = "MenuBar/MenuBarController.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000110000000000000001 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContentView.swift; path = "Navigation/ContentView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000130000000000000001 /* NavigationDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NavigationDestination.swift; path = "Navigation/NavigationDestination.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000150000000000000001 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SidebarView.swift; path = "Navigation/SidebarView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000170000000000000001 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = NotificationService.swift; path = "Notifications/NotificationService.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000190000000000000001 /* BroadcastHistoryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BroadcastHistoryEntry.swift; path = "Screens/Broadcast/BroadcastHistoryEntry.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000001B0000000000000001 /* BroadcastView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BroadcastView.swift; path = "Screens/Broadcast/BroadcastView.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000001D0000000000000001 /* BroadcastViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = BroadcastViewModel.swift; path = "Screens/Broadcast/BroadcastViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000001F0000000000000001 /* ContentTypeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContentTypeBadge.swift; path = "Screens/Moderation/ContentTypeBadge.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000210000000000000001 /* ModerationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ModerationView.swift; path = "Screens/Moderation/ModerationView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000230000000000000001 /* ModerationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ModerationViewModel.swift; path = "Screens/Moderation/ModerationViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000250000000000000001 /* ReportDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReportDetailView.swift; path = "Screens/Moderation/ReportDetailView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000270000000000000001 /* ReportListRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReportListRowView.swift; path = "Screens/Moderation/ReportListRowView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000290000000000000001 /* OverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OverviewView.swift; path = "Screens/Overview/OverviewView.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000002B0000000000000001 /* OverviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = OverviewViewModel.swift; path = "Screens/Overview/OverviewViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000002D0000000000000001 /* StatTileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StatTileView.swift; path = "Screens/Overview/StatTileView.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000002F0000000000000001 /* UsageRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsageRowView.swift; path = "Screens/Overview/UsageRowView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000310000000000000001 /* RecentSignupRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RecentSignupRowView.swift; path = "Screens/RecentSignups/RecentSignupRowView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000330000000000000001 /* RecentSignupsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RecentSignupsView.swift; path = "Screens/RecentSignups/RecentSignupsView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000350000000000000001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = "Screens/Settings/SettingsView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000370000000000000001 /* ByteFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ByteFormatter.swift; path = "Utilities/ByteFormatter.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000390000000000000001 /* DateFormatters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DateFormatters.swift; path = "Utilities/DateFormatters.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000003B0000000000000001 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Extensions.swift; path = "Utilities/Extensions.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000005C0000000000000001 /* CloudflareAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CloudflareAPIClient.swift; path = "Data/CloudflareAPIClient.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000005E0000000000000001 /* WebsiteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WebsiteView.swift; path = "Screens/Website/WebsiteView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000600000000000000001 /* WebsiteViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WebsiteViewModel.swift; path = "Screens/Website/WebsiteViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000630000000000000001 /* ContentBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContentBrowserView.swift; path = "Screens/Content/ContentBrowserView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000650000000000000001 /* ContentBrowserViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContentBrowserViewModel.swift; path = "Screens/Content/ContentBrowserViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000680000000000000001 /* UsersView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsersView.swift; path = "Screens/Users/UsersView.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000006A0000000000000001 /* UsersViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = UsersViewModel.swift; path = "Screens/Users/UsersViewModel.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000006E0000000000000001 /* ChallengesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChallengesView.swift; path = "Screens/Challenges/ChallengesView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000700000000000000001 /* ChallengeDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChallengeDetailView.swift; path = "Screens/Challenges/ChallengeDetailView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000720000000000000001 /* ChallengeFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ChallengeFormView.swift; path = "Screens/Challenges/ChallengeFormView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000A20000000000000001 /* ShotThemeQueueView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShotThemeQueueView.swift; path = "Screens/Challenges/ShotThemeQueueView.swift"; sourceTree = SOURCE_ROOT; };
+		DD000000A40000000000000001 /* ShotThemeFormView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShotThemeFormView.swift; path = "Screens/Challenges/ShotThemeFormView.swift"; sourceTree = SOURCE_ROOT; };
+		DD0000003D0000000000000001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		DD0000003F0000000000000001 /* TorqueDenAdmin.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TorqueDenAdmin.entitlements; sourceTree = "<group>"; };
+		DD000000400000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		DD000000500000000000000001 /* TorqueDenAdmin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TorqueDenAdmin.app; sourceTree = BUILT_PRODUCTS_DIR; };
+
+		DD000000420000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000430000000000000001,
+				DD000000440000000000000001,
+				DD000000450000000000000001,
+				DD000000460000000000000001,
+				DD000000470000000000000001,
+				DD000000480000000000000001,
+				DD0000004E0000000000000001,
+				DD0000003D0000000000000001,
+				DD0000003F0000000000000001,
+				DD000000400000000000000001,
+				DD0000004F0000000000000001,
+			);
+			name = TorqueDenAdmin;
+			sourceTree = "<group>";
+		};
+		DD000000430000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000010000000000000001,
+				DD000000030000000000000001,
+				DD000000050000000000000001,
+			);
+			name = App;
+			sourceTree = "<group>";
+		};
+		DD000000440000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000070000000000000001,
+				DD000000090000000000000001,
+				DD0000000B0000000000000001,
+				DD0000000D0000000000000001,
+				DD0000005C0000000000000001,
+			);
+			name = Data;
+			sourceTree = "<group>";
+		};
+		DD000000450000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000110000000000000001,
+				DD000000130000000000000001,
+				DD000000150000000000000001,
+			);
+			name = Navigation;
+			sourceTree = "<group>";
+		};
+		DD000000460000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000170000000000000001,
+			);
+			name = Notifications;
+			sourceTree = "<group>";
+		};
+		DD000000470000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD0000000F0000000000000001,
+			);
+			name = MenuBar;
+			sourceTree = "<group>";
+		};
+		DD000000480000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000490000000000000001,
+				DD0000004A0000000000000001,
+				DD0000004B0000000000000001,
+				DD0000004C0000000000000001,
+				DD0000004D0000000000000001,
+				DD000000620000000000000001,
+				DD000000670000000000000001,
+				DD0000006C0000000000000001,
+				DD000000730000000000000001,
+			);
+			name = Screens;
+			sourceTree = "<group>";
+		};
+		DD000000620000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD0000005E0000000000000001,
+				DD000000600000000000000001,
+			);
+			name = Website;
+			sourceTree = "<group>";
+		};
+		DD000000670000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000630000000000000001,
+				DD000000650000000000000001,
+			);
+			name = Content;
+			sourceTree = "<group>";
+		};
+		DD0000006C0000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000680000000000000001,
+				DD0000006A0000000000000001,
+			);
+			name = Users;
+			sourceTree = "<group>";
+		};
+		DD000000730000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD0000006E0000000000000001,
+				DD000000700000000000000001,
+				DD000000720000000000000001,
+			);
+			name = Challenges;
+			sourceTree = "<group>";
+		};
+		DD000000490000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000290000000000000001,
+				DD0000002B0000000000000001,
+				DD0000002D0000000000000001,
+				DD0000002F0000000000000001,
+			);
+			name = Overview;
+			sourceTree = "<group>";
+		};
+		DD0000004A0000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD0000001F0000000000000001,
+				DD000000210000000000000001,
+				DD000000230000000000000001,
+				DD000000250000000000000001,
+				DD000000270000000000000001,
+			);
+			name = Moderation;
+			sourceTree = "<group>";
+		};
+		DD0000004B0000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000190000000000000001,
+				DD0000001B0000000000000001,
+				DD0000001D0000000000000001,
+			);
+			name = Broadcast;
+			sourceTree = "<group>";
+		};
+		DD0000004C0000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000310000000000000001,
+				DD000000330000000000000001,
+			);
+			name = RecentSignups;
+			sourceTree = "<group>";
+		};
+		DD0000004D0000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000350000000000000001,
+			);
+			name = Settings;
+			sourceTree = "<group>";
+		};
+		DD0000004E0000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000370000000000000001,
+				DD000000390000000000000001,
+				DD0000003B0000000000000001,
+			);
+			name = Utilities;
+			sourceTree = "<group>";
+		};
+		DD0000004F0000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				DD000000500000000000000001,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+
+		DD000000510000000000000001 = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DD000000020000000000000001 /* App/AppDelegate.swift in Sources */,
+				DD000000040000000000000001 /* App/AppState.swift in Sources */,
+				DD000000060000000000000001 /* App/TorqueDenAdminApp.swift in Sources */,
+				DD000000080000000000000001 /* Data/AdminAPIClient.swift in Sources */,
+				DD0000000A0000000000000001 /* Data/KeychainService.swift in Sources */,
+				DD0000000C0000000000000001 /* Data/Models.swift in Sources */,
+				DD0000000E0000000000000001 /* Data/ModerationPollService.swift in Sources */,
+				DD000000100000000000000001 /* MenuBar/MenuBarController.swift in Sources */,
+				DD000000120000000000000001 /* Navigation/ContentView.swift in Sources */,
+				DD000000140000000000000001 /* Navigation/NavigationDestination.swift in Sources */,
+				DD000000160000000000000001 /* Navigation/SidebarView.swift in Sources */,
+				DD000000180000000000000001 /* Notifications/NotificationService.swift in Sources */,
+				DD0000001A0000000000000001 /* Screens/Broadcast/BroadcastHistoryEntry.swift in Sources */,
+				DD0000001C0000000000000001 /* Screens/Broadcast/BroadcastView.swift in Sources */,
+				DD0000001E0000000000000001 /* Screens/Broadcast/BroadcastViewModel.swift in Sources */,
+				DD000000200000000000000001 /* Screens/Moderation/ContentTypeBadge.swift in Sources */,
+				DD000000220000000000000001 /* Screens/Moderation/ModerationView.swift in Sources */,
+				DD000000240000000000000001 /* Screens/Moderation/ModerationViewModel.swift in Sources */,
+				DD000000260000000000000001 /* Screens/Moderation/ReportDetailView.swift in Sources */,
+				DD000000280000000000000001 /* Screens/Moderation/ReportListRowView.swift in Sources */,
+				DD0000002A0000000000000001 /* Screens/Overview/OverviewView.swift in Sources */,
+				DD0000002C0000000000000001 /* Screens/Overview/OverviewViewModel.swift in Sources */,
+				DD0000002E0000000000000001 /* Screens/Overview/StatTileView.swift in Sources */,
+				DD000000300000000000000001 /* Screens/Overview/UsageRowView.swift in Sources */,
+				DD000000320000000000000001 /* Screens/RecentSignups/RecentSignupRowView.swift in Sources */,
+				DD000000340000000000000001 /* Screens/RecentSignups/RecentSignupsView.swift in Sources */,
+				DD000000360000000000000001 /* Screens/Settings/SettingsView.swift in Sources */,
+				DD000000380000000000000001 /* Utilities/ByteFormatter.swift in Sources */,
+				DD0000003A0000000000000001 /* Utilities/DateFormatters.swift in Sources */,
+				DD0000003C0000000000000001 /* Utilities/Extensions.swift in Sources */,
+				DD0000005D0000000000000001 /* Data/CloudflareAPIClient.swift in Sources */,
+				DD0000005F0000000000000001 /* Screens/Website/WebsiteView.swift in Sources */,
+				DD000000610000000000000001 /* Screens/Website/WebsiteViewModel.swift in Sources */,
+				DD000000640000000000000001 /* Screens/Content/ContentBrowserView.swift in Sources */,
+				DD000000660000000000000001 /* Screens/Content/ContentBrowserViewModel.swift in Sources */,
+				DD000000690000000000000001 /* Screens/Users/UsersView.swift in Sources */,
+				DD0000006B0000000000000001 /* Screens/Users/UsersViewModel.swift in Sources */,
+				DD0000006D0000000000000001 /* Screens/Challenges/ChallengesView.swift in Sources */,
+				DD0000006F0000000000000001 /* Screens/Challenges/ChallengeDetailView.swift in Sources */,
+				DD000000710000000000000001 /* Screens/Challenges/ChallengeFormView.swift in Sources */,
+				DD000000A10000000000000001 /* Screens/Challenges/ShotThemeQueueView.swift in Sources */,
+				DD000000A30000000000000001 /* Screens/Challenges/ShotThemeFormView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		DD000000520000000000000001 = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		DD000000530000000000000001 = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DD000000410000000000000001 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+
+		DD000000540000000000000001 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DD000000550000000000000001;
+			buildPhases = (
+				DD000000510000000000000001,
+				DD000000520000000000000001,
+				DD000000530000000000000001,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = TorqueDenAdmin;
+			productName = TorqueDenAdmin;
+			productReference = DD000000500000000000000001;
+			productType = "com.apple.product-type.application";
+		};
+
+		DD000000560000000000000001 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = TorqueDenAdmin.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.torquedenapp.admin;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		DD000000570000000000000001 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = TorqueDenAdmin.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.torquedenapp.admin;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+
+		DD000000550000000000000001 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD000000560000000000000001,
+				DD000000570000000000000001,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+
+		DD0000005A0000000000000001 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)");
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		DD0000005B0000000000000001 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf-with-dsym;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+
+		DD000000590000000000000001 = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DD0000005A0000000000000001,
+				DD0000005B0000000000000001,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+
+		DD000000580000000000000001 = {
+			isa = PBXProject;
+			buildConfigurationList = DD000000590000000000000001;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = ( en, Base, );
+			mainGroup = DD000000420000000000000001;
+			productRefGroup = DD0000004F0000000000000001;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DD000000540000000000000001,
+			);
+		};
+
+	};
+	rootObject = DD000000580000000000000001;
+}

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -22,6 +23,7 @@ class BiometricLock {
 
   /// Is any biometric / device credential actually available on this device?
   static Future<bool> isAvailable() async {
+    if (kIsWeb) return false;
     try {
       return await _auth.isDeviceSupported();
     } catch (_) {
@@ -31,6 +33,7 @@ class BiometricLock {
 
   /// Prompt for biometrics. Returns true on success. [reason] is shown to the user.
   static Future<bool> authenticate(String reason) async {
+    if (kIsWeb) return false;
     try {
       return await _auth.authenticate(
         localizedReason: reason,
@@ -44,6 +47,7 @@ class BiometricLock {
 
   /// Turn the lock on (requires a successful prompt first) or off.
   static Future<bool> setEnabled(bool value) async {
+    if (kIsWeb) return false;
     if (value) {
       final ok = await authenticate('Confirm it\'s you to turn on biometric unlock');
       if (!ok) return false;

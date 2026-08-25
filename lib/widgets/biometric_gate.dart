@@ -61,7 +61,7 @@ class _BiometricGateState extends State<BiometricGate> {
                     children: [
                       const Wordmark(fontSize: 34),
                       const SizedBox(height: 28),
-                      const Icon(Icons.lock_outline, size: 40, color: AppColors.steel),
+                      Icon(Icons.lock_outline, size: 40, color: AppColors.steel),
                       const SizedBox(height: 20),
                       Text('TorqueDen is locked',
                           style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 15)),

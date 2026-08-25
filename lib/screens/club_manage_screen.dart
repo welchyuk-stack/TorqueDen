@@ -9,6 +9,7 @@ import 'package:torqueden/screens/add_car_screen.dart' show kCarPhotosBucket;
 import 'package:torqueden/screens/club_members_screen.dart';
 import 'package:torqueden/services/club_mod_log.dart';
 import 'package:torqueden/services/entitlements.dart';
+import 'package:torqueden/widgets/settings_group.dart';
 import 'package:torqueden/widgets/upgrade_sheet.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/time_ago.dart';
@@ -49,14 +50,6 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
   static const _slowOptions = <int, String>{
     0: 'Off', 30: '30 seconds', 60: '1 minute', 300: '5 minutes', 900: '15 minutes',
   };
-
-  /// Shared rounded card outline for the switch/list tiles below (so each tile
-  /// paints its own background + ink, instead of a wrapping DecoratedBox that
-  /// would hide the ripple).
-  static const _cardShape = RoundedRectangleBorder(
-    borderRadius: BorderRadius.all(Radius.circular(14)),
-    side: BorderSide(color: AppColors.hairline),
-  );
 
   @override
   void initState() {
@@ -220,12 +213,21 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
         'blocked_words': _parseWords(),
       }).eq('id', _club.id).select('*, club_members(count)');
       _club = Club.fromMap(rows.first);
-      _snack('Club updated');
+      _snack('Forum updated');
     } catch (e) {
       _snack('Could not save: $e');
     } finally {
       if (mounted) setState(() { _savingDetails = false; });
     }
+  }
+
+  void _deleteOldStorageFile(String? publicUrl) {
+    if (publicUrl == null || publicUrl.isEmpty) return;
+    const marker = '/object/public/$kCarPhotosBucket/';
+    final idx = publicUrl.indexOf(marker);
+    if (idx == -1) return;
+    final storagePath = Uri.decodeFull(publicUrl.substring(idx + marker.length));
+    _client.storage.from(kCarPhotosBucket).remove([storagePath]).ignore();
   }
 
   Future<void> _changePhoto() async {
@@ -247,13 +249,14 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
             fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'),
           );
       final url = _client.storage.from(kCarPhotosBucket).getPublicUrl(path);
+      _deleteOldStorageFile(_club.avatarUrl);
       final rows = await _client
           .from('clubs')
           .update({'avatar_url': url})
           .eq('id', _club.id)
           .select('*, club_members(count)');
       _club = Club.fromMap(rows.first);
-      _snack('Club photo updated');
+      _snack('Forum photo updated');
     } catch (e) {
       _snack('Could not upload photo: $e');
     } finally {
@@ -280,6 +283,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
             fileOptions: FileOptions(contentType: ext == 'png' ? 'image/png' : 'image/jpeg'),
           );
       final url = _client.storage.from(kCarPhotosBucket).getPublicUrl(path);
+      _deleteOldStorageFile(_club.bannerUrl);
       final rows = await _client
           .from('clubs')
           .update({'banner_url': url})
@@ -299,8 +303,8 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
     if (private && !Entitlements.canCreatePrivateClubs) {
       await showUpgradeSheet(
         context,
-        title: 'Private clubs are Premium',
-        message: 'Upgrade to Premium to make your club private (request-to-join, '
+        title: 'Private forums are Premium',
+        message: 'Upgrade to Premium to make your forum private (request-to-join, '
             'members-only posts).',
       );
       return;
@@ -345,8 +349,8 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.graphite,
-        title: Text('Delete this club?',
-            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        title: Text('Delete this forum?',
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
         content: Text(
           'This permanently removes “${_club.name}”, its threads and replies. This can\'t be undone.',
           style: GoogleFonts.inter(color: AppColors.textSecondary),
@@ -365,7 +369,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
       await _client.from('clubs').delete().eq('id', _club.id);
       if (mounted) Navigator.of(context).pop(const ClubManageResult(deleted: true));
     } catch (e) {
-      _snack('Could not delete the club: $e');
+      _snack('Could not delete the forum: $e');
     }
   }
 
@@ -394,7 +398,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
         if (!didPop) Navigator.of(context).pop(ClubManageResult(club: _club));
       },
       child: Scaffold(
-        appBar: AppBar(title: const Text('Manage club')),
+        appBar: AppBar(title: const Text('Manage forum')),
         body: SafeArea(
           child: ListView(
             padding: const EdgeInsets.all(16),
@@ -443,10 +447,10 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                       icon: _uploading
                           ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ember))
                           : const Icon(Icons.photo_camera_outlined, size: 18),
-                      label: Text(_club.hasAvatar ? 'Change photo' : 'Add club photo'),
+                      label: Text(_club.hasAvatar ? 'Change photo' : 'Add forum photo'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.ember,
-                        side: const BorderSide(color: AppColors.hairline),
+                        side: BorderSide(color: AppColors.hairline),
                         padding: const EdgeInsets.symmetric(vertical: 13),
                       ),
                     ),
@@ -460,7 +464,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                 controller: _name,
                 textCapitalization: TextCapitalization.words,
                 style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
-                decoration: const InputDecoration(labelText: 'Club name'),
+                decoration: const InputDecoration(labelText: 'Forum name'),
               ),
               const SizedBox(height: 14),
               TextField(
@@ -477,53 +481,47 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                 textCapitalization: TextCapitalization.sentences,
                 style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
                 decoration: const InputDecoration(
-                  labelText: 'Club rules',
-                  hintText: 'House rules shown at the top of the club.',
+                  labelText: 'Forum rules',
+                  hintText: 'House rules shown at the top of the forum.',
                 ),
               ),
               const SizedBox(height: 16),
 
-              // Private
-              SwitchListTile(
-                value: _club.isPrivate,
-                onChanged: _togglePrivate,
-                activeThumbColor: AppColors.ember,
-                tileColor: AppColors.graphite,
-                shape: _cardShape,
-                title: Text('Private club',
-                    style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                subtitle: Text('People request to join and only members see posts. Still listed in Discover.',
-                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
-                secondary: Icon(_club.isPrivate ? Icons.lock : Icons.public, color: AppColors.steel),
-              ),
-              const SizedBox(height: 10),
-
-              // Lock
-              SwitchListTile(
-                value: _club.isLocked,
-                onChanged: _toggleLock,
-                activeThumbColor: AppColors.ember,
-                tileColor: AppColors.graphite,
-                shape: _cardShape,
-                title: Text('Lock club',
-                    style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                subtitle: Text('Members can\'t post while locked. You still can.',
-                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
-                secondary: Icon(_club.isLocked ? Icons.lock : Icons.lock_open, color: AppColors.steel),
-              ),
-              const SizedBox(height: 10),
-              SwitchListTile(
-                value: _club.isArchived,
-                onChanged: _toggleArchive,
-                activeThumbColor: AppColors.ember,
-                tileColor: AppColors.graphite,
-                shape: _cardShape,
-                title: Text('Archive club',
-                    style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                subtitle: Text('Read-only — nobody can post, including you.',
-                    style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
-                secondary: Icon(_club.isArchived ? Icons.inventory_2 : Icons.inventory_2_outlined,
-                    color: AppColors.steel),
+              // Private / Lock / Archive
+              SettingsGroup(
+                children: [
+                  SwitchListTile(
+                    value: _club.isPrivate,
+                    onChanged: _togglePrivate,
+                    activeThumbColor: AppColors.ember,
+                    title: Text('Private forum',
+                        style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                    subtitle: Text('People request to join and only members see posts. Still listed in Discover.',
+                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                    secondary: Icon(_club.isPrivate ? Icons.lock : Icons.public, color: AppColors.steel),
+                  ),
+                  SwitchListTile(
+                    value: _club.isLocked,
+                    onChanged: _toggleLock,
+                    activeThumbColor: AppColors.ember,
+                    title: Text('Lock forum',
+                        style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                    subtitle: Text('Members can\'t post while locked. You still can.',
+                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                    secondary: Icon(_club.isLocked ? Icons.lock : Icons.lock_open, color: AppColors.steel),
+                  ),
+                  SwitchListTile(
+                    value: _club.isArchived,
+                    onChanged: _toggleArchive,
+                    activeThumbColor: AppColors.ember,
+                    title: Text('Archive forum',
+                        style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                    subtitle: Text('Read-only — nobody can post, including you.',
+                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13)),
+                    secondary: Icon(_club.isArchived ? Icons.inventory_2 : Icons.inventory_2_outlined,
+                        color: AppColors.steel),
+                  ),
+                ],
               ),
               const SizedBox(height: 14),
 
@@ -531,7 +529,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
               DropdownButtonFormField<int>(
                 initialValue: _slowOptions.containsKey(_club.slowModeSeconds) ? _club.slowModeSeconds : 0,
                 isExpanded: true,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Slow mode',
                   prefixIcon: Icon(Icons.timer_outlined, color: AppColors.steel, size: 20),
                 ),
@@ -571,27 +569,26 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
               const SizedBox(height: 24),
 
               // Members — opens a searchable full-screen list.
-              ListTile(
-                onTap: _openMembers,
-                tileColor: AppColors.graphite,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  side: const BorderSide(color: AppColors.hairline),
-                ),
-                leading: const Icon(Icons.group_outlined, color: AppColors.steel),
-                title: Text('Members',
-                    style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                subtitle: FutureBuilder<List<_Member>>(
-                  future: _membersFuture,
-                  builder: (context, snapshot) {
-                    final n = snapshot.data?.length;
-                    return Text(
-                      n == null ? 'Manage roles, mutes and bans' : '$n ${n == 1 ? 'member' : 'members'} · manage roles, mutes and bans',
-                      style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13),
-                    );
-                  },
-                ),
-                trailing: const Icon(Icons.chevron_right, color: AppColors.steel),
+              SettingsGroup(
+                children: [
+                  ListTile(
+                    onTap: _openMembers,
+                    leading: Icon(Icons.group_outlined, color: AppColors.steel),
+                    title: Text('Members',
+                        style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+                    subtitle: FutureBuilder<List<_Member>>(
+                      future: _membersFuture,
+                      builder: (context, snapshot) {
+                        final n = snapshot.data?.length;
+                        return Text(
+                          n == null ? 'Manage roles, mutes and bans' : '$n ${n == 1 ? 'member' : 'members'} · manage roles, mutes and bans',
+                          style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 13),
+                        );
+                      },
+                    ),
+                    trailing: Icon(Icons.chevron_right, color: AppColors.steel),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
 
@@ -605,7 +602,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Banned',
-                          style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
                       const SizedBox(height: 8),
                       for (final b in banned)
                         Padding(
@@ -642,14 +639,14 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Muted',
-                          style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
                       const SizedBox(height: 8),
                       for (final m in muted)
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 6),
                           child: Row(
                             children: [
-                              const Icon(Icons.volume_off, size: 20, color: AppColors.steel),
+                              Icon(Icons.volume_off, size: 20, color: AppColors.steel),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(m.username ?? 'Member',
@@ -679,7 +676,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Mod log',
-                          style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                          style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
                       const SizedBox(height: 8),
                       for (final e in log)
                         Padding(
@@ -712,7 +709,7 @@ class _ClubManageScreenState extends State<ClubManageScreen> {
               OutlinedButton.icon(
                 onPressed: _deleteClub,
                 icon: const Icon(Icons.delete_outline, size: 20),
-                label: const Text('Delete club'),
+                label: const Text('Delete forum'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.danger,
                   side: BorderSide(color: AppColors.danger.withValues(alpha: 0.5)),
@@ -753,10 +750,10 @@ class _LogEntry {
     const verbs = {
       'ban': 'banned', 'mute': 'muted', 'remove': 'removed', 'make_admin': 'made admin',
       'remove_admin': 'removed admin from', 'transfer': 'transferred ownership to',
-      'lock': 'locked the club', 'unlock': 'unlocked the club',
-      'archive': 'archived the club', 'unarchive': 'unarchived the club',
+      'lock': 'locked the forum', 'unlock': 'unlocked the forum',
+      'archive': 'archived the forum', 'unarchive': 'unarchived the forum',
       'slow_mode': 'set slow mode',
-      'make_private': 'made the club private', 'make_public': 'made the club public',
+      'make_private': 'made the forum private', 'make_public': 'made the forum public',
       'approve_request': 'approved the join request of', 'deny_request': 'denied the join request of',
     };
     final who = actor ?? 'A mod';
@@ -772,16 +769,13 @@ class _BannerPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.graphiteRaised,
-        border: Border.all(color: AppColors.hairline),
-      ),
-      child: const Column(
+      decoration: AppDecorations.glassCard(radius: 0),
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.image_outlined, size: 30, color: AppColors.steel),
           SizedBox(height: 6),
-          Text('Club banner', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          Text('Forum banner', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
         ],
       ),
     );
@@ -809,6 +803,6 @@ class _Avatar extends StatelessWidget {
         color: AppColors.graphiteRaised,
         alignment: Alignment.center,
         child: Text(club.name.isNotEmpty ? club.name[0].toUpperCase() : '#',
-            style: GoogleFonts.archivo(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.ember)),
+            style: GoogleFonts.spaceGrotesk(fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.ember)),
       );
 }

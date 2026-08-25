@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/club.dart';
+import 'package:torqueden/utils/image_compress.dart';
 import 'package:torqueden/models/club_thread.dart';
 import 'package:torqueden/screens/club_manage_screen.dart';
 import 'package:torqueden/screens/thread_detail_screen.dart';
 import 'package:torqueden/services/club_mod_log.dart';
 import 'package:torqueden/services/moderation.dart';
+import 'package:torqueden/services/guest_mode.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/post_error.dart';
 import 'package:torqueden/utils/time_ago.dart';
 import 'package:torqueden/widgets/empty_state.dart';
+import 'package:torqueden/widgets/guest_nudge_sheet.dart';
 import 'package:torqueden/widgets/moderation_sheet.dart';
 
 /// A club's page: header + Join/Leave, then its discussion threads. Members can
@@ -34,14 +37,16 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
   int _memberCount = 0;
   int _online = 0;
   bool _joining = false;
-  bool _requested = false; // this user has a pending join request (private club)
+  bool _requested =
+      false; // this user has a pending join request (private club)
   int _pendingRequests = 0; // queue size, for mods
   RealtimeChannel? _presence;
 
   String? get _uid => _client.auth.currentUser?.id;
   bool get _isOwner => _uid != null && _uid == _club.ownerId;
   bool get _isMod => _isOwner || _isAdmin;
-  bool get _canPost => _member && !_club.isArchived && (!_club.isLocked || _isMod);
+  bool get _canPost =>
+      _member && !_club.isArchived && (!_club.isLocked || _isMod);
 
   @override
   void initState() {
@@ -65,30 +70,35 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
     final uid = _uid;
     if (uid == null) return;
     final ch = _client.channel('club-presence-${_club.id}');
-    ch.onPresenceSync((_) {
-      final ids = <String>{};
-      for (final state in ch.presenceState()) {
-        for (final p in state.presences) {
-          final u = p.payload['user_id'];
-          if (u is String) ids.add(u);
-        }
-      }
-      if (mounted) setState(() => _online = ids.length);
-    }).subscribe((status, _) async {
-      if (status == RealtimeSubscribeStatus.subscribed) {
-        await ch.track({'user_id': uid});
-      }
-    });
+    ch
+        .onPresenceSync((_) {
+          final ids = <String>{};
+          for (final state in ch.presenceState()) {
+            for (final p in state.presences) {
+              final u = p.payload['user_id'];
+              if (u is String) ids.add(u);
+            }
+          }
+          if (mounted) setState(() => _online = ids.length);
+        })
+        .subscribe((status, _) async {
+          if (status == RealtimeSubscribeStatus.subscribed) {
+            await ch.track({'user_id': uid});
+          }
+        });
     _presence = ch;
   }
 
   Future<List<ClubThread>> _load() async {
     await Moderation.refreshBlocks();
     // Membership + role + member count.
-    final members =
-        await _client.from('club_members').select('user_id, role').eq('club_id', _club.id);
+    final members = await _client
+        .from('club_members')
+        .select('user_id, role')
+        .eq('club_id', _club.id);
     _member = _uid != null && members.any((m) => m['user_id'] == _uid);
-    _isAdmin = _uid != null &&
+    _isAdmin =
+        _uid != null &&
         members.any((m) => m['user_id'] == _uid && m['role'] == 'admin');
     _memberCount = members.length;
 
@@ -106,8 +116,10 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
         _requested = req != null;
       }
       if (_isMod) {
-        final reqs =
-            await _client.from('club_join_requests').select('id').eq('club_id', _club.id);
+        final reqs = await _client
+            .from('club_join_requests')
+            .select('id')
+            .eq('club_id', _club.id);
         _pendingRequests = reqs.length;
       }
     }
@@ -127,60 +139,117 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
 
   Future<void> _refresh() async {
     final future = _load();
-    setState(() { _future = future; });
+    setState(() {
+      _future = future;
+    });
     await future;
   }
 
   void _snack(String m) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    if (mounted)
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
   /// The banner's primary control: leave if a member, otherwise join (public) or
   /// request / cancel a request (private).
   Future<void> _primaryAction() async {
+    if (GuestMode.isGuest) {
+      await showGuestNudge(context, reason: 'join forums');
+      return;
+    }
     if (_uid == null || _joining) return;
-    if (_member) return _leave();
+    if (_member) return _confirmLeave();
     if (_club.isPrivate) return _requested ? _cancelRequest() : _requestJoin();
     return _join();
   }
 
   Future<void> _join() async {
-    setState(() { _joining = true; });
+    setState(() {
+      _joining = true;
+    });
     try {
       await _client.from('club_members').insert({'club_id': _club.id});
       if (!mounted) return;
-      setState(() { _member = true; _memberCount += 1; _joining = false; });
+      setState(() {
+        _member = true;
+        _memberCount += 1;
+        _joining = false;
+      });
     } catch (e) {
       _joinFailed(e);
     }
   }
 
+  Future<void> _confirmLeave() async {
+    final isPrivate = _club.isPrivate;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Leave forum?',
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: Text(
+          isPrivate
+              ? 'You\'ll lose access to this private forum and will need to request to rejoin.'
+              : 'You can rejoin this forum at any time.',
+          style: GoogleFonts.inter(color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Leave', style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    return _leave();
+  }
+
   Future<void> _leave() async {
-    setState(() { _joining = true; });
+    setState(() {
+      _joining = true;
+    });
     try {
-      await _client.from('club_members').delete().eq('club_id', _club.id).eq('user_id', _uid!);
+      await _client
+          .from('club_members')
+          .delete()
+          .eq('club_id', _club.id)
+          .eq('user_id', _uid!);
       if (!mounted) return;
-      setState(() { _member = false; _memberCount -= 1; _joining = false; });
-      if (_club.isPrivate) await _refresh(); // content now hidden → show the gate
+      setState(() {
+        _member = false;
+        _memberCount -= 1;
+        _joining = false;
+      });
+      if (_club.isPrivate)
+        await _refresh(); // content now hidden → show the gate
     } catch (e) {
       _joinFailed(e);
     }
   }
 
   Future<void> _requestJoin() async {
-    setState(() { _joining = true; });
+    setState(() {
+      _joining = true;
+    });
     try {
       await _client.from('club_join_requests').insert({'club_id': _club.id});
       if (!mounted) return;
-      setState(() { _requested = true; _joining = false; });
-      _snack('Request sent — a club mod will review it.');
+      setState(() {
+        _requested = true;
+        _joining = false;
+      });
+      _snack('Request sent — a forum mod will review it.');
     } catch (e) {
       _joinFailed(e);
     }
   }
 
   Future<void> _cancelRequest() async {
-    setState(() { _joining = true; });
+    setState(() {
+      _joining = true;
+    });
     try {
       await _client
           .from('club_join_requests')
@@ -188,7 +257,10 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
           .eq('club_id', _club.id)
           .eq('user_id', _uid!);
       if (!mounted) return;
-      setState(() { _requested = false; _joining = false; });
+      setState(() {
+        _requested = false;
+        _joining = false;
+      });
     } catch (e) {
       _joinFailed(e);
     }
@@ -196,7 +268,9 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
 
   void _joinFailed(Object e) {
     if (!mounted) return;
-    setState(() { _joining = false; });
+    setState(() {
+      _joining = false;
+    });
     _snack('Something went wrong: $e');
   }
 
@@ -235,18 +309,39 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
       Navigator.of(context).pop(); // close the club → back to the list
       return;
     }
-    if (result.club != null) setState(() { _club = result.club!; });
+    if (result.club != null)
+      setState(() {
+        _club = result.club!;
+      });
     await _refresh();
   }
 
   Future<void> _deleteThread(ClubThread thread) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Delete thread?',
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: Text('This removes the thread and all its replies. This can\'t be undone.',
+            style: GoogleFonts.inter(color: AppColors.textSecondary, height: 1.5)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Delete', style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600))),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
     try {
       await _client.from('club_threads').delete().eq('id', thread.id);
       await _refresh();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Could not delete: $e')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not delete: $e')));
     }
   }
 
@@ -268,17 +363,33 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.gavel_outlined, size: 18, color: AppColors.ember),
+                  const Icon(
+                    Icons.gavel_outlined,
+                    size: 18,
+                    color: AppColors.ember,
+                  ),
                   const SizedBox(width: 8),
-                  Text('Club Rules',
-                      style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                  Text(
+                    'Forum Rules',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.cream,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
               Flexible(
                 child: SingleChildScrollView(
-                  child: Text(rules,
-                      style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.5)),
+                  child: Text(
+                    rules,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      color: AppColors.textSecondary,
+                      height: 1.5,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -315,6 +426,7 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.background,
       floatingActionButton: _canPost
           ? FloatingActionButton.extended(
               onPressed: _ask,
@@ -345,45 +457,65 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (desc.isNotEmpty) ...[
-                        Text(desc,
-                            style: GoogleFonts.inter(
-                                fontSize: 15, color: AppColors.textSecondary, height: 1.45)),
+                        Text(
+                          desc,
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            color: AppColors.textSecondary,
+                            height: 1.45,
+                          ),
+                        ),
                         const SizedBox(height: 16),
                       ],
                       if (loading)
                         const Padding(
                           padding: EdgeInsets.only(top: 60),
-                          child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.ember,
+                            ),
+                          ),
                         )
                       else if (snapshot.hasError)
                         EmptyState(
                           icon: Icons.error_outline,
                           title: 'Could not load threads',
                           message: '${snapshot.error}',
-                          action: FilledButton(onPressed: _refresh, child: const Text('Try again')),
+                          action: FilledButton(
+                            onPressed: _refresh,
+                            child: const Text('Try again'),
+                          ),
                         )
                       else if (_club.isPrivate && !_member && !_isMod)
                         Padding(
                           padding: const EdgeInsets.only(top: 40),
                           child: EmptyState(
                             icon: Icons.lock_outline,
-                            title: 'This club is private',
+                            title: 'This forum is private',
                             message: _requested
                                 ? 'Your request to join is pending. You\'ll see the discussions once a mod approves it.'
                                 : 'Only members can see the discussions here. Request to join to get in.',
                             action: _requested
                                 ? OutlinedButton.icon(
                                     onPressed: _joining ? null : _cancelRequest,
-                                    icon: const Icon(Icons.hourglass_top, size: 18),
+                                    icon: const Icon(
+                                      Icons.hourglass_top,
+                                      size: 18,
+                                    ),
                                     label: const Text('Cancel request'),
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: AppColors.steel,
-                                      side: const BorderSide(color: AppColors.hairline),
+                                      side: BorderSide(
+                                        color: AppColors.hairline,
+                                      ),
                                     ),
                                   )
                                 : FilledButton.icon(
                                     onPressed: _joining ? null : _requestJoin,
-                                    icon: const Icon(Icons.how_to_reg, size: 20),
+                                    icon: const Icon(
+                                      Icons.how_to_reg,
+                                      size: 20,
+                                    ),
                                     label: const Text('Request to join'),
                                   ),
                           ),
@@ -395,8 +527,8 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                           message: _canPost
                               ? 'Start the first discussion with the Post button.'
                               : _club.isLocked
-                                  ? 'This club is locked — posting is closed.'
-                                  : 'Join the club to start a discussion.',
+                              ? 'This forum is locked — posting is closed.'
+                              : 'Join the forum to start a discussion.',
                         )
                       else
                         for (final t in threads) ...[
@@ -435,17 +567,25 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
         fit: StackFit.expand,
         children: [
           if (_club.hasBanner)
-            Image.network(_club.bannerUrl!, fit: BoxFit.cover, errorBuilder: (_, _, _) => const _BannerFallback())
+            Image.network(
+              supabaseThumb(_club.bannerUrl!, width: 800),
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const _BannerFallback(),
+            )
           else
             const _BannerFallback(),
-          // Legibility scrim, darker top and bottom.
-          const DecoratedBox(
+          // Legibility scrim
+          DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [Colors.black54, Colors.transparent, Colors.black87],
-                stops: [0.0, 0.45, 1.0],
+                colors: [
+                  Colors.black.withValues(alpha: 0.45),
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.55),
+                ],
+                stops: const [0.0, 0.45, 1.0],
               ),
             ),
           ),
@@ -461,11 +601,13 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                         _club.name,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.archivo(
+                        style: GoogleFonts.spaceGrotesk(
                           fontSize: 22,
                           fontWeight: FontWeight.w800,
                           color: AppColors.cream,
-                          shadows: const [Shadow(color: Colors.black87, blurRadius: 8)],
+                          shadows: const [
+                            Shadow(color: Colors.black87, blurRadius: 8),
+                          ],
                         ),
                       ),
                     ),
@@ -475,7 +617,11 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                     ],
                     if (_isMod && _club.isPrivate) ...[
                       const SizedBox(width: 6),
-                      _CircleBtn(icon: Icons.how_to_reg, onTap: _openRequests, badge: _pendingRequests),
+                      _CircleBtn(
+                        icon: Icons.how_to_reg,
+                        onTap: _openRequests,
+                        badge: _pendingRequests,
+                      ),
                     ],
                     if (_isOwner) ...[
                       const SizedBox(width: 6),
@@ -488,13 +634,22 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    _CircleBtn(icon: Icons.arrow_back, onTap: () => Navigator.of(context).pop()),
+                    _CircleBtn(
+                      icon: Icons.arrow_back,
+                      onTap: () => Navigator.of(context).pop(),
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Row(
                         children: [
-                          if (_club.isLocked) const _MiniChip(icon: Icons.lock, label: 'Locked'),
-                          if (_club.isArchived) const _MiniChip(icon: Icons.inventory_2_outlined, label: 'Archived'),
+                          if (_club.isLocked)
+                            const _MiniChip(icon: Icons.lock, label: 'Locked'),
+                          if (_club.isArchived)
+                            const _MiniChip(
+                              icon: Icons.inventory_2_outlined,
+                              label: 'Archived',
+                            ),
+                          if (_memberCount >= 10)
                           Flexible(
                             child: Text(
                               '$_memberCount ${_memberCount == 1 ? 'member' : 'members'}$online',
@@ -504,7 +659,9 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.cream,
-                                shadows: const [Shadow(color: Colors.black87, blurRadius: 6)],
+                                shadows: const [
+                                  Shadow(color: Colors.black87, blurRadius: 6),
+                                ],
                               ),
                             ),
                           ),
@@ -530,23 +687,32 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
           color: Colors.black.withValues(alpha: 0.45),
           borderRadius: BorderRadius.circular(999),
         ),
-        child: Text('Owner',
-            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.cream)),
+        child: Text(
+          'Owner',
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: AppColors.cream,
+          ),
+        ),
       );
     }
     if (_member) {
       return TextButton(
-        onPressed: _joining ? null : _leave,
+        onPressed: _joining ? null : _confirmLeave,
         style: TextButton.styleFrom(
           backgroundColor: Colors.black.withValues(alpha: 0.45),
           foregroundColor: AppColors.cream,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          textStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+          textStyle: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         child: const Text('Leave'),
       );
     }
-    // Private club, request already pending: show a "Requested" pill that cancels.
+    // Private forum, request already pending: show a "Requested" pill that cancels.
     if (_club.isPrivate && _requested) {
       return TextButton.icon(
         onPressed: _joining ? null : _cancelRequest,
@@ -554,7 +720,10 @@ class _ClubDetailScreenState extends State<ClubDetailScreen> {
           backgroundColor: Colors.black.withValues(alpha: 0.45),
           foregroundColor: AppColors.cream,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          textStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+          textStyle: GoogleFonts.inter(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         icon: const Icon(Icons.hourglass_top, size: 15),
         label: const Text('Requested'),
@@ -576,12 +745,16 @@ class _BannerFallback extends StatelessWidget {
   const _BannerFallback();
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
+    return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [Color(0xFF2A2016), AppColors.carbon],
+          colors: [
+            const Color(0xFF3D2510),
+            const Color(0xFF1C1008),
+            AppColors.graphite,
+          ],
         ),
       ),
     );
@@ -628,7 +801,11 @@ class _CircleBtn extends StatelessWidget {
             child: Text(
               badge > 99 ? '99+' : '$badge',
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.onEmber),
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: AppColors.onEmber,
+              ),
             ),
           ),
         ),
@@ -651,11 +828,21 @@ class _MiniChip extends StatelessWidget {
         color: Colors.black.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12, color: AppColors.cream),
-        const SizedBox(width: 4),
-        Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.cream)),
-      ]),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.cream),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.cream,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -682,8 +869,14 @@ class _RulesButton extends StatelessWidget {
           children: [
             const Icon(Icons.gavel_outlined, size: 13, color: AppColors.ember),
             const SizedBox(width: 5),
-            Text('Club Rules',
-                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.ember)),
+            Text(
+              'Forum Rules',
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: AppColors.ember,
+              ),
+            ),
           ],
         ),
       ),
@@ -714,11 +907,7 @@ class _ThreadRow extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
-        decoration: BoxDecoration(
-          color: AppColors.graphite,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.hairline),
-        ),
+        decoration: AppDecorations.glassCard(radius: 14),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -732,7 +921,11 @@ class _ThreadRow extends StatelessWidget {
                       if (thread.isPinned) ...[
                         const Padding(
                           padding: EdgeInsets.only(top: 2, right: 6),
-                          child: Icon(Icons.push_pin, size: 14, color: AppColors.ember),
+                          child: Icon(
+                            Icons.push_pin,
+                            size: 14,
+                            color: AppColors.ember,
+                          ),
                         ),
                       ],
                       Expanded(
@@ -740,7 +933,11 @@ class _ThreadRow extends StatelessWidget {
                           thread.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.cream),
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.cream,
+                          ),
                         ),
                       ),
                     ],
@@ -749,7 +946,10 @@ class _ThreadRow extends StatelessWidget {
                   Text(
                     '${thread.authorName ?? 'Member'} · ${timeAgo(thread.createdAt)} · '
                     '${thread.replyCount} ${thread.replyCount == 1 ? 'reply' : 'replies'}',
-                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                    ),
                   ),
                 ],
               ),
@@ -763,7 +963,7 @@ class _ThreadRow extends StatelessWidget {
                 tooltip: 'Delete thread',
               )
             else
-              const Padding(
+              Padding(
                 padding: EdgeInsets.only(right: 8, top: 2),
                 child: Icon(Icons.chevron_right, color: AppColors.steel),
               ),
@@ -798,7 +998,9 @@ class _AskSheetState extends State<_AskSheet> {
 
   Future<void> _post() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _saving = true; });
+    setState(() {
+      _saving = true;
+    });
     final body = _body.text.trim();
     try {
       await Supabase.instance.client.from('club_threads').insert({
@@ -809,9 +1011,12 @@ class _AskSheetState extends State<_AskSheet> {
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
-      setState(() { _saving = false; });
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(friendlyPostError(e))));
+      setState(() {
+        _saving = false;
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyPostError(e))));
     }
   }
 
@@ -827,14 +1032,24 @@ class _AskSheetState extends State<_AskSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Start a thread',
-                  style: GoogleFonts.archivo(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.cream)),
+              Text(
+                'Start a thread',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.cream,
+                ),
+              ),
               const SizedBox(height: 18),
               TextFormField(
                 controller: _title,
                 textCapitalization: TextCapitalization.sentences,
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Add a title' : null,
-                decoration: const InputDecoration(labelText: 'Title *', hintText: 'Ask a question or start a topic'),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Add a title' : null,
+                decoration: const InputDecoration(
+                  labelText: 'Title *',
+                  hintText: 'Ask a question or start a topic',
+                ),
               ),
               const SizedBox(height: 14),
               TextFormField(
@@ -842,18 +1057,30 @@ class _AskSheetState extends State<_AskSheet> {
                 textCapitalization: TextCapitalization.sentences,
                 maxLines: 5,
                 minLines: 3,
-                decoration: const InputDecoration(labelText: 'Details (optional)', hintText: 'Add context…'),
+                decoration: const InputDecoration(
+                  labelText: 'Details (optional)',
+                  hintText: 'Add context…',
+                ),
               ),
               const SizedBox(height: 12),
               Text(
                 'Links here are for sharing info with other members — not for promoting a business. Businesses can set up a Partner Page.',
-                style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, height: 1.4),
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  color: AppColors.textMuted,
+                  height: 1.4,
+                ),
               ),
               const SizedBox(height: 16),
               if (_saving)
-                const Center(child: CircularProgressIndicator(color: AppColors.ember))
+                const Center(
+                  child: CircularProgressIndicator(color: AppColors.ember),
+                )
               else
-                FilledButton(onPressed: _post, child: const Text('Post thread')),
+                FilledButton(
+                  onPressed: _post,
+                  child: const Text('Post thread'),
+                ),
             ],
           ),
         ),
@@ -873,7 +1100,12 @@ class _RequestsSheet extends StatefulWidget {
 }
 
 class _JoinRequest {
-  const _JoinRequest({required this.id, required this.userId, this.username, required this.createdAt});
+  const _JoinRequest({
+    required this.id,
+    required this.userId,
+    this.username,
+    required this.createdAt,
+  });
   final String id;
   final String userId;
   final String? username;
@@ -910,16 +1142,25 @@ class _RequestsSheetState extends State<_RequestsSheet> {
   }
 
   void _snack(String m) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    if (mounted)
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
   Future<void> _approve(_JoinRequest r) async {
     setState(() => _busy.add(r.id));
     try {
       await _client.rpc('approve_join_request', params: {'req': r.id});
-      ClubModLog.record(widget.clubId, 'approve_request', targetUserId: r.userId);
+      ClubModLog.record(
+        widget.clubId,
+        'approve_request',
+        targetUserId: r.userId,
+      );
       _changed = true;
-      if (mounted) setState(() { _busy.remove(r.id); _future = _load(); });
+      if (mounted)
+        setState(() {
+          _busy.remove(r.id);
+          _future = _load();
+        });
     } catch (e) {
       if (mounted) setState(() => _busy.remove(r.id));
       _snack('Could not approve: $e');
@@ -932,7 +1173,11 @@ class _RequestsSheetState extends State<_RequestsSheet> {
       await _client.from('club_join_requests').delete().eq('id', r.id);
       ClubModLog.record(widget.clubId, 'deny_request', targetUserId: r.userId);
       _changed = true;
-      if (mounted) setState(() { _busy.remove(r.id); _future = _load(); });
+      if (mounted)
+        setState(() {
+          _busy.remove(r.id);
+          _future = _load();
+        });
     } catch (e) {
       if (mounted) setState(() => _busy.remove(r.id));
       _snack('Could not deny: $e');
@@ -955,10 +1200,20 @@ class _RequestsSheetState extends State<_RequestsSheet> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.how_to_reg, size: 20, color: AppColors.ember),
+                  const Icon(
+                    Icons.how_to_reg,
+                    size: 20,
+                    color: AppColors.ember,
+                  ),
                   const SizedBox(width: 8),
-                  Text('Join requests',
-                      style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                  Text(
+                    'Join requests',
+                    style: GoogleFonts.spaceGrotesk(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.cream,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 14),
@@ -969,15 +1224,24 @@ class _RequestsSheetState extends State<_RequestsSheet> {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Padding(
                         padding: EdgeInsets.symmetric(vertical: 28),
-                        child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.ember,
+                          ),
+                        ),
                       );
                     }
                     final requests = snapshot.data ?? const <_JoinRequest>[];
                     if (requests.isEmpty) {
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24),
-                        child: Text('No pending requests.',
-                            style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary)),
+                        child: Text(
+                          'No pending requests.',
+                          style: GoogleFonts.inter(
+                            fontSize: 15,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
                       );
                     }
                     return ListView.separated(
@@ -993,25 +1257,52 @@ class _RequestsSheetState extends State<_RequestsSheet> {
                           child: Row(
                             children: [
                               Container(
-                                width: 36, height: 36,
-                                decoration: const BoxDecoration(color: AppColors.graphiteRaised, shape: BoxShape.circle),
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: AppColors.graphiteRaised,
+                                  shape: BoxShape.circle,
+                                ),
                                 alignment: Alignment.center,
-                                child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                    style: GoogleFonts.inter(color: AppColors.steel, fontWeight: FontWeight.w700)),
+                                child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                  style: GoogleFonts.inter(
+                                    color: AppColors.steel,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(name, style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15)),
-                                    Text('Requested ${timeAgo(r.createdAt)}',
-                                        style: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 12)),
+                                    Text(
+                                      name,
+                                      style: GoogleFonts.inter(
+                                        color: AppColors.cream,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                    Text(
+                                      'Requested ${timeAgo(r.createdAt)}',
+                                      style: GoogleFonts.inter(
+                                        color: AppColors.textMuted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
                               if (busy)
-                                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ember))
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.ember,
+                                  ),
+                                )
                               else ...[
                                 IconButton(
                                   onPressed: () => _deny(r),
@@ -1022,7 +1313,10 @@ class _RequestsSheetState extends State<_RequestsSheet> {
                                 ),
                                 IconButton(
                                   onPressed: () => _approve(r),
-                                  icon: const Icon(Icons.check_circle, size: 24),
+                                  icon: const Icon(
+                                    Icons.check_circle,
+                                    size: 24,
+                                  ),
                                   color: AppColors.ember,
                                   tooltip: 'Approve',
                                   visualDensity: VisualDensity.compact,

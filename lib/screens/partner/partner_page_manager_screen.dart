@@ -52,7 +52,7 @@ class _PartnerPageManagerScreenState extends State<PartnerPageManagerScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.graphite,
         title: Text('Delete your Partner Page?',
-            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
         content: Text('This removes your business page. You can create a new one later.',
             style: GoogleFonts.inter(color: AppColors.textSecondary)),
         actions: [
@@ -95,7 +95,7 @@ class _PartnerPageManagerScreenState extends State<PartnerPageManagerScreen> {
 
   List<Widget> _noPage() => [
         Text('Set up your Partner Page',
-            style: GoogleFonts.archivo(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.cream)),
+            style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.cream)),
         const SizedBox(height: 8),
         Text('Add a banner, a bio and a link to your site. It shows in Discover → Partners for everyone to find.',
             style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.45)),
@@ -109,11 +109,7 @@ class _PartnerPageManagerScreenState extends State<PartnerPageManagerScreen> {
 
   List<Widget> _hasPage(PartnerPage page) => [
         Container(
-          decoration: BoxDecoration(
-            color: AppColors.graphite,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: AppColors.hairline),
-          ),
+          decoration: AppDecorations.glassCard(radius: 16),
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,7 +123,7 @@ class _PartnerPageManagerScreenState extends State<PartnerPageManagerScreen> {
               Padding(
                 padding: const EdgeInsets.all(14),
                 child: Text(page.businessName,
-                    style: GoogleFonts.archivo(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                    style: GoogleFonts.spaceGrotesk(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.cream)),
               ),
             ],
           ),
@@ -145,7 +141,7 @@ class _PartnerPageManagerScreenState extends State<PartnerPageManagerScreen> {
               .push(MaterialPageRoute(builder: (_) => PartnerPageScreen(page: page))),
           style: OutlinedButton.styleFrom(
             foregroundColor: AppColors.ember,
-            side: const BorderSide(color: AppColors.hairline),
+            side: BorderSide(color: AppColors.hairline),
             minimumSize: const Size.fromHeight(48),
           ),
           icon: const Icon(Icons.visibility_outlined, size: 20),
@@ -174,7 +170,7 @@ class _PartnerPageManagerScreenState extends State<PartnerPageManagerScreen> {
             const SizedBox(height: 18),
             Text('Partner Pages are for Partner members',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.archivo(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.cream)),
             const SizedBox(height: 10),
             Text('Upgrade to the Partner tier to get a public page for your business, brand or shop.',
                 textAlign: TextAlign.center,
@@ -191,7 +187,7 @@ class _PartnerPageManagerScreenState extends State<PartnerPageManagerScreen> {
     );
   }
 
-  Widget _fallback() => const DecoratedBox(
+  Widget _fallback() => DecoratedBox(
         decoration: BoxDecoration(color: AppColors.graphiteRaised),
         child: Center(child: Icon(Icons.storefront_outlined, size: 30, color: AppColors.steel)),
       );

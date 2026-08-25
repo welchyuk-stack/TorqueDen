@@ -48,7 +48,7 @@ class DonateScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 Text('Support TorqueDen',
-                    style: GoogleFonts.archivo(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.cream)),
+                    style: GoogleFonts.spaceGrotesk(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.cream)),
                 const SizedBox(height: 12),
                 Text(
                   'TorqueDen is built by a small team. If you\'d like to help cover '

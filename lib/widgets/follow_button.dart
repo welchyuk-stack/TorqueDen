@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/services/guest_mode.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/widgets/guest_nudge_sheet.dart';
 
 /// Follow / Following toggle for a car.
 ///
@@ -14,6 +16,7 @@ class FollowButton extends StatefulWidget {
     this.initialFollowing,
     this.onChanged,
     this.compact = false,
+    this.expanded = false,
   });
 
   final String carId;
@@ -22,6 +25,9 @@ class FollowButton extends StatefulWidget {
 
   /// A smaller pill, for use inside list rows.
   final bool compact;
+
+  /// Stretch to fill available width (e.g. on a car profile page).
+  final bool expanded;
 
   @override
   State<FollowButton> createState() => _FollowButtonState();
@@ -63,6 +69,10 @@ class _FollowButtonState extends State<FollowButton> {
   }
 
   Future<void> _toggle() async {
+    if (GuestMode.isGuest) {
+      await showGuestNudge(context, reason: 'follow cars');
+      return;
+    }
     final uid = _client.auth.currentUser?.id;
     if (uid == null || _following == null) return;
     setState(() => _busy = true);
@@ -70,13 +80,8 @@ class _FollowButtonState extends State<FollowButton> {
     final wantFollow = !(_following!);
     try {
       if (wantFollow) {
-        // Upsert + ignoreDuplicates so re-following an already-followed car is a
-        // no-op instead of a unique-constraint error (the button state can lag
-        // behind the DB if you followed the same car from another screen).
-        await _client.from('follows').upsert(
+        await _client.from('follows').insert(
           {'follower_id': uid, 'car_id': widget.carId},
-          onConflict: 'follower_id,car_id',
-          ignoreDuplicates: true,
         );
       } else {
         await _client
@@ -105,7 +110,7 @@ class _FollowButtonState extends State<FollowButton> {
     final following = _following;
     if (following == null) {
       // Reserve roughly the button's footprint while we check.
-      return const SizedBox(
+      return SizedBox(
         height: 36,
         width: 96,
         child: Center(
@@ -122,8 +127,14 @@ class _FollowButtonState extends State<FollowButton> {
         ? const EdgeInsets.symmetric(horizontal: 14, vertical: 8)
         : const EdgeInsets.symmetric(horizontal: 18, vertical: 10);
 
+    final minSize = widget.expanded
+        ? const Size(double.infinity, 44)
+        : widget.compact
+            ? const Size(72, 32)
+            : const Size(96, 36);
+
     final child = _busy
-        ? const SizedBox(
+        ? SizedBox(
             height: 16,
             width: 16,
             child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.steel),
@@ -135,8 +146,9 @@ class _FollowButtonState extends State<FollowButton> {
         onPressed: _busy ? null : _toggle,
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.steel,
-          side: const BorderSide(color: AppColors.hairline),
+          side: BorderSide(color: AppColors.hairline),
           padding: padding,
+          minimumSize: minSize,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
         ),
         child: child,
@@ -146,6 +158,7 @@ class _FollowButtonState extends State<FollowButton> {
       onPressed: _busy ? null : _toggle,
       style: FilledButton.styleFrom(
         padding: padding,
+        minimumSize: minSize,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
       child: child,

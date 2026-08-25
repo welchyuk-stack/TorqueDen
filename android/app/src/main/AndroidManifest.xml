@@ -34,11 +34,10 @@
                 <data android:scheme="io.torqueden"/>
             </intent-filter>
         </activity>
-        <!-- AdMob app ID (Google's TEST id — replace with the real one and set
-             AdIds.useTestAds = false before release). -->
+        <!-- AdMob app ID (real TorqueDen Android app, created 2026-07-15). -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713" />
+            android:value="ca-app-pub-5912511696757213~4648751049" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

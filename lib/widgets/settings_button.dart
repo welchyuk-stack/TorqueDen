@@ -13,7 +13,7 @@ class SettingsButton extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
       child: IconButton(
-        icon: const Icon(Icons.settings_outlined, color: AppColors.steel, size: 25.2),
+        icon: Icon(Icons.settings_outlined, color: AppColors.steel, size: 25.2),
         tooltip: 'Settings',
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(builder: (_) => const SettingsScreen()),

@@ -39,7 +39,7 @@ class _PostsTabState extends State<PostsTab> {
   Future<List<PostMedia>> _load() async {
     final rows = await _client
         .from('post_media')
-        .select('id, url, kind, position, build_entry_id, created_at')
+        .select('id, url, kind, position, build_entry_id, created_at, build_entry:build_entry_id(title, tags)')
         .eq('car_id', widget.car.id)
         .order('created_at', ascending: false);
     return rows.map(PostMedia.fromMap).toList();
@@ -58,23 +58,127 @@ class _PostsTabState extends State<PostsTab> {
   void _openViewer(PostMedia media) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        fullscreenDialog: true,
         builder: (_) => PostViewerScreen(media: media),
       ),
     );
   }
 
-  Future<void> _confirmDelete(PostMedia media) async {
+  Future<void> _ownerActions(PostMedia media) async {
     final entryId = media.buildEntryId;
     if (entryId == null) return;
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.graphite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Icon(Icons.edit_outlined, color: AppColors.cream),
+              title: Text('Edit caption',
+                  style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: AppColors.danger),
+              title: Text('Delete post',
+                  style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'edit') await _editCaption(entryId);
+    if (action == 'delete') await _confirmDelete(entryId);
+  }
+
+  Future<void> _editCaption(String entryId) async {
+    // Fetch current title from build_entries
+    String current = '';
+    try {
+      final row = await _client.from('build_entries').select('title').eq('id', entryId).single();
+      current = (row['title'] as String?) ?? '';
+    } catch (_) {}
+    if (!mounted) return;
+
+    final ctrl = TextEditingController(text: current);
+    final newCaption = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Edit caption',
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 4,
+          maxLength: 500,
+          style: GoogleFonts.inter(color: AppColors.cream),
+          cursorColor: AppColors.ember,
+          decoration: InputDecoration(
+            hintText: 'Caption…',
+            hintStyle: GoogleFonts.inter(color: AppColors.steel),
+            counterStyle: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: AppColors.hairline),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.ember),
+            ),
+            contentPadding: const EdgeInsets.all(12),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () { ctrl.dispose(); Navigator.pop(ctx); },
+            child: Text('Cancel', style: GoogleFonts.inter(color: AppColors.steel)),
+          ),
+          TextButton(
+            onPressed: () {
+              final v = ctrl.text.trim();
+              ctrl.dispose();
+              Navigator.pop(ctx, v.isEmpty ? null : v);
+            },
+            child: Text('Save',
+                style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (newCaption == null || !mounted) return;
+    try {
+      await _client.from('build_entries').update({'title': newCaption}).eq('id', entryId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Caption updated.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not update caption. Please try again.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDelete(String entryId) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.graphite,
         title: Text(
           'Delete this post?',
-          style:
-              GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700),
+          style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700),
         ),
         content: Text(
           'This removes the post — and any photos or clips in it — from your '
@@ -88,11 +192,8 @@ class _PostsTabState extends State<PostsTab> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'Delete',
-              style:
-                  GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600),
-            ),
+            child: Text('Delete',
+                style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -102,8 +203,18 @@ class _PostsTabState extends State<PostsTab> {
 
   Future<void> _deletePost(String entryId) async {
     try {
-      // Cascades to this post's media, likes and comments (FKs ON DELETE
-      // CASCADE); RLS allows it only for the car's owner.
+      // Fetch storage paths before deleting (cascade removes post_media rows).
+      final mediaRows = await _client
+          .from('post_media')
+          .select('url')
+          .eq('build_entry_id', entryId);
+      final paths = (mediaRows as List)
+          .map((r) => PostMedia.fromMap(r as Map<String, dynamic>).storagePath)
+          .whereType<String>()
+          .toList();
+      if (paths.isNotEmpty) {
+        await _client.storage.from('car-photos').remove(paths);
+      }
       await _client.from('build_entries').delete().eq('id', entryId);
       await _refresh();
       if (mounted) {
@@ -176,7 +287,7 @@ class _PostsTabState extends State<PostsTab> {
                   media: media[i],
                   onTap: () => _openViewer(media[i]),
                   onLongPress:
-                      widget.isOwner ? () => _confirmDelete(media[i]) : null,
+                      widget.isOwner ? () => _ownerActions(media[i]) : null,
                 ),
               );
             },
@@ -241,7 +352,7 @@ class _MediaTile extends StatelessWidget {
             _VideoThumb(url: media.url)
           else
             Image.network(
-              media.url,
+              media.thumbnailUrl(),
               fit: BoxFit.cover,
               errorBuilder: (_, _, _) => const _TileFallback(),
               loadingBuilder: (context, child, progress) =>
@@ -256,6 +367,23 @@ class _MediaTile extends StatelessWidget {
                 color: Colors.white,
                 size: 22,
                 shadows: [Shadow(color: Colors.black54, blurRadius: 4)],
+              ),
+            ),
+          // Owner-only actions indicator — tap invokes the long-press menu
+          if (onLongPress != null)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: onLongPress,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(Icons.more_horiz, color: Colors.white, size: 16),
+                ),
               ),
             ),
         ],
@@ -337,7 +465,7 @@ class _TileFallback extends StatelessWidget {
     return Container(
       color: AppColors.graphiteRaised,
       alignment: Alignment.center,
-      child: const Icon(Icons.image_outlined, color: AppColors.steel, size: 28),
+      child: Icon(Icons.image_outlined, color: AppColors.steel, size: 28),
     );
   }
 }

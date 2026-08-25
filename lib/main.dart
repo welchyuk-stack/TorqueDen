@@ -3,13 +3,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/ads/consent_service.dart';
 import 'package:torqueden/iap/iap_service.dart';
 import 'package:torqueden/push/push_service.dart';
-import 'package:torqueden/screens/auth/auth_gate.dart';
+import 'package:torqueden/screens/splash_screen.dart';
 import 'package:torqueden/services/biometric_lock.dart';
+import 'package:torqueden/services/feed_prefs.dart';
 import 'package:torqueden/services/saved_location.dart';
+import 'package:torqueden/services/theme_pref.dart';
 import 'package:torqueden/services/units_pref.dart';
 import 'package:torqueden/supabase_config.dart';
 import 'package:torqueden/theme.dart';
-import 'package:torqueden/widgets/biometric_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +20,8 @@ Future<void> main() async {
   await UnitsPref.load();
   await SavedLocation.load();
   await BiometricLock.load();
+  await ThemePref.load();
+  await FeedPrefs.load();
 
   // Connect to Supabase (credentials live in supabase_config.dart).
   // Guarded so the app still runs if the config hasn't been filled in.
@@ -58,11 +61,35 @@ class _TorqueDenAppState extends State<TorqueDenApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'TorqueDen',
-      debugShowCheckedModeBanner: false,
-      theme: buildTorqueDenTheme(),
-      home: const BiometricGate(child: AuthGate()),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemePref.notifier,
+      builder: (context, mode, _) {
+        final systemBrightness = MediaQuery.platformBrightnessOf(context);
+        final effective = mode == ThemeMode.system
+            ? systemBrightness
+            : (mode == ThemeMode.dark ? Brightness.dark : Brightness.light);
+        // Most of the app reads AppColors.* as a static property rather than
+        // via Theme.of(context), so switching brightness has to be a real
+        // remount (not just a rebuild): a `const` widget anywhere in the tree
+        // (there are many) is otherwise never revisited by Flutter once
+        // built, since its widget instance stays identical across rebuilds
+        // and gets skipped rather than re-evaluated. Keying on the resolved
+        // brightness forces the whole subtree to unmount/remount on every
+        // theme change, so every AppColors.* reference — const or not — is
+        // freshly read against the new value.
+        AppColors.updateBrightness(effective);
+        return KeyedSubtree(
+          key: ValueKey(effective),
+          child: MaterialApp(
+            title: 'TorqueDen',
+            debugShowCheckedModeBanner: false,
+            themeMode: mode,
+            theme: buildTorqueDenTheme(Brightness.light),
+            darkTheme: buildTorqueDenTheme(Brightness.dark),
+            home: const SplashScreen(),
+          ),
+        );
+      },
     );
   }
 }

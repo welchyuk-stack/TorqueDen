@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:postgrest/postgrest.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/app_notification.dart';
 
@@ -35,9 +36,12 @@ class NotificationsService {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return 0;
     try {
-      final rows =
-          await _client.from('notifications').select('id').eq('read', false);
-      return rows.length;
+      final result = await _client
+          .from('notifications')
+          .select('id')
+          .eq('read', false)
+          .count(CountOption.exact);
+      return result.count;
     } catch (_) {
       return 0;
     }
@@ -50,6 +54,18 @@ class NotificationsService {
 
   static Future<void> markAllRead() async {
     await _client.from('notifications').update({'read': true}).eq('read', false);
+    await refreshUnread();
+  }
+
+  static Future<void> delete(String id) async {
+    await _client.from('notifications').delete().eq('id', id);
+    await refreshUnread();
+  }
+
+  static Future<void> deleteAll() async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) return;
+    await _client.from('notifications').delete().eq('user_id', uid);
     await refreshUnread();
   }
 }

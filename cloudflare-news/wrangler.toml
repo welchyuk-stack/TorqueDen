@@ -1,0 +1,14 @@
+name = "torqueden-news"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+[triggers]
+crons = ["0 * * * *"]   # poll sources every hour
+
+[[d1_databases]]
+binding = "DB"
+database_name = "torqueden-news"
+database_id = "559f4fed-1cf3-44c1-b847-12ab07b91c85"
+
+[vars]
+ENVIRONMENT = "production"

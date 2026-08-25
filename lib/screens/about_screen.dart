@@ -28,18 +28,14 @@ class AboutScreen extends StatelessWidget {
                 const SizedBox(height: 28),
                 Text(
                   'TorqueDen is a home for car builds — share your project, follow other '
-                  'people\'s work, and find your crew in clubs.',
+                  'people\'s work, and find your crew in forums.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 15, height: 1.5),
                 ),
                 const SizedBox(height: 32),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.graphiteRaised,
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: AppColors.hairline),
-                  ),
+                  decoration: AppDecorations.glassCard(radius: 999),
                   child: Text('Version $kAppVersion',
                       style: GoogleFonts.inter(color: AppColors.steel, fontSize: 13, fontWeight: FontWeight.w600)),
                 ),

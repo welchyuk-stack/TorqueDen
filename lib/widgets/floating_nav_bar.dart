@@ -1,30 +1,29 @@
-import 'dart:math' as math;
-import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:torqueden/theme.dart';
 
 /// A floating, frosted-glass bottom navigation bar (iOS Liquid Glass spirit).
 ///
-/// Four destinations (Home, Discover, Garage, Clubs) plus a hex-**nut** create
-/// button on the far right — tap it to open the composer.
+/// Five destinations (Home, Discover, Garage, Clubs, Messages) plus a hex-**nut**
+/// create button on the far right — tap it to open the composer.
 class FloatingNavBar extends StatelessWidget {
   const FloatingNavBar({
     super.key,
     required this.index,
     required this.onSelect,
-    required this.onCreate,
     this.homeUnread = 0,
+    this.dmUnread = 0,
   });
 
   final int index;
   final ValueChanged<int> onSelect;
-  final VoidCallback onCreate;
 
   /// Unread notification count — badges the Home item when > 0.
   final int homeUnread;
+
+  /// Unread DM count — badges the Messages item when > 0.
+  final int dmUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -50,36 +49,47 @@ class FloatingNavBar extends StatelessWidget {
                 onTap: () => onSelect(0),
               ),
               _NavItem(
+                icon: Icons.newspaper_outlined,
+                selectedIcon: Icons.newspaper,
+                label: 'News',
+                selected: index == 1,
+                onTap: () => onSelect(1),
+              ),
+              _NavItem(
                 icon: Icons.search_outlined,
                 selectedIcon: Icons.search,
                 label: 'Discover',
-                selected: index == 1,
-                onTap: () => onSelect(1),
+                selected: index == 2,
+                onTap: () => onSelect(2),
               ),
               _NavItem(
                 icon: Icons.garage_outlined,
                 selectedIcon: Icons.garage,
                 label: 'Garage',
-                selected: index == 2,
-                onTap: () => onSelect(2),
-              ),
-              _NavItem(
-                icon: Icons.groups_outlined,
-                selectedIcon: Icons.groups,
-                label: 'Clubs',
                 selected: index == 3,
                 onTap: () => onSelect(3),
               ),
-              // The nut create button (far right).
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    onCreate();
-                  },
-                  child: const _Nut(),
-                ),
+              _NavItem(
+                icon: Icons.people_outline,
+                selectedIcon: Icons.people,
+                label: 'Community',
+                selected: index == 4,
+                onTap: () => onSelect(4),
+              ),
+              _NavItem(
+                icon: Icons.forum_outlined,
+                selectedIcon: Icons.forum,
+                label: 'Messages',
+                selected: index == 5,
+                showBadge: dmUnread > 0,
+                onTap: () => onSelect(5),
+              ),
+              _NavItem(
+                icon: Icons.settings_outlined,
+                selectedIcon: Icons.settings,
+                label: 'Settings',
+                selected: index == 6,
+                onTap: () => onSelect(6),
               ),
             ],
           ),
@@ -89,66 +99,6 @@ class FloatingNavBar extends StatelessWidget {
   }
 }
 
-/// The hex-nut create handle with a "+".
-class _Nut extends StatelessWidget {
-  const _Nut();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: SizedBox(
-        width: 42,
-        height: 42,
-        child: CustomPaint(painter: _NutPainter()),
-      ),
-    );
-  }
-}
-
-class _NutPainter extends CustomPainter {
-  const _NutPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = size.center(Offset.zero);
-    final r = size.width / 2 - 2;
-
-    // Flat-top hexagon (a nut).
-    final hex = Path();
-    for (var i = 0; i < 6; i++) {
-      final a = math.pi / 180 * (60 * i);
-      final p = center + Offset(r * math.cos(a), r * math.sin(a));
-      i == 0 ? hex.moveTo(p.dx, p.dy) : hex.lineTo(p.dx, p.dy);
-    }
-    hex.close();
-
-    canvas.drawPath(
-      hex,
-      Paint()
-        ..color = AppColors.ember
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.2
-        ..strokeJoin = StrokeJoin.round,
-    );
-
-    // The "+" in the middle.
-    final ps = r * 0.95;
-    final t = ps * 0.26;
-    final rr = Radius.circular(t / 2);
-    final paint = Paint()..color = AppColors.ember;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromCenter(center: center, width: ps, height: t), rr),
-      paint,
-    );
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromCenter(center: center, width: t, height: ps), rr),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _NutPainter oldDelegate) => false;
-}
 
 /// The blurred, translucent, rounded container behind the nav row.
 class _GlassBar extends StatelessWidget {
@@ -171,17 +121,31 @@ class _GlassBar extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.graphite.withValues(alpha: 0.72),
-              borderRadius: BorderRadius.circular(28),
-              border: Border.all(color: AppColors.cream.withValues(alpha: 0.08), width: 1),
-            ),
-            child: child,
-          ),
-        ),
+        // Dark mode keeps the real frosted-glass blur, refracting the carbon
+        // weave behind it. Light mode has no textured canvas to refract, so
+        // the bar is a flat opaque grey instead — same surface language as
+        // the light-mode cards, not glass — and skips the (pointless, over
+        // an opaque fill) BackdropFilter cost.
+        child: AppColors.isDark
+            ? BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF16191E).withValues(alpha: 0.68),
+                    borderRadius: BorderRadius.circular(28),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.10), width: 1),
+                  ),
+                  child: child,
+                ),
+              )
+            : Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEEEEE),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: const Color(0x1A15171B), width: 1),
+                ),
+                child: child,
+              ),
       ),
     );
   }
@@ -207,6 +171,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final color = selected ? AppColors.ember : AppColors.cream.withValues(alpha: 0.6);
     return Expanded(
       child: InkWell(
         onTap: onTap,
@@ -217,15 +182,14 @@ class _NavItem extends StatelessWidget {
             Stack(
               clipBehavior: Clip.none,
               children: [
-                Icon(selected ? selectedIcon : icon,
-                    color: selected ? AppColors.ember : AppColors.steel, size: 24),
+                Icon(selected ? selectedIcon : icon, color: color, size: 24),
                 if (showBadge)
                   Positioned(
-                    top: -1,
-                    right: -3,
+                    top: -2,
+                    right: -4,
                     child: Container(
-                      width: 9,
-                      height: 9,
+                      width: 8,
+                      height: 8,
                       decoration: BoxDecoration(
                         color: AppColors.ember,
                         shape: BoxShape.circle,
@@ -238,10 +202,10 @@ class _NavItem extends StatelessWidget {
             const SizedBox(height: 3),
             Text(
               label,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                color: selected ? AppColors.cream : AppColors.steel,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: color,
               ),
             ),
           ],

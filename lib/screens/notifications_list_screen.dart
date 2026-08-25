@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:torqueden/models/app_notification.dart';
+import 'package:torqueden/models/car.dart';
+import 'package:torqueden/models/club_thread.dart';
+import 'package:torqueden/screens/car_detail_screen.dart';
+import 'package:torqueden/screens/thread_detail_screen.dart';
 import 'package:torqueden/services/notifications_service.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The notifications inbox: a list of the events you've been notified about,
 /// with unread ones highlighted. Rows are created by DB triggers that respect
@@ -35,13 +40,75 @@ class _NotificationsListScreenState extends State<NotificationsListScreen> {
     await _refresh();
   }
 
+  Future<void> _delete(String id) async {
+    await NotificationsService.delete(id);
+    await _refresh();
+  }
+
+  Future<void> _clearAll() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear all notifications?'),
+        content: const Text('This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Clear all', style: TextStyle(color: AppColors.ember)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      await NotificationsService.deleteAll();
+      await _refresh();
+    }
+  }
+
   Future<void> _onTap(AppNotification n) async {
     if (!n.read) {
       await NotificationsService.markRead(n.id);
-      await _refresh();
+      if (mounted) setState(() {});
     }
-    // Deep-linking to the exact post/thread is a follow-up; for now tapping
-    // just marks the notification read.
+    if (!mounted) return;
+    switch (n.type) {
+      case 'new_follower':
+      case 'post_like':
+      case 'post_comment':
+        if (n.carId != null) {
+          final row = await Supabase.instance.client
+              .from('cars')
+              .select()
+              .eq('id', n.carId!)
+              .maybeSingle();
+          if (row != null && mounted) {
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => CarDetailScreen(car: Car.fromMap(row)),
+            ));
+          }
+        }
+      case 'club_new_thread':
+      case 'thread_reply':
+      case 'comment_reply':
+        if (n.threadId != null) {
+          final row = await Supabase.instance.client
+              .from('club_threads')
+              .select('*, author:author_id(username, display_name, avatar_url)')
+              .eq('id', n.threadId!)
+              .maybeSingle();
+          if (row != null && mounted) {
+            final thread = ClubThread.fromMap(row);
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => ThreadDetailScreen(
+                thread: thread,
+                canPost: true,
+                canModerate: false,
+              ),
+            ));
+          }
+        }
+    }
   }
 
   @override
@@ -54,6 +121,11 @@ class _NotificationsListScreenState extends State<NotificationsListScreen> {
             onPressed: _markAllRead,
             child: Text('Mark all read',
                 style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_sweep_outlined),
+            tooltip: 'Clear all',
+            onPressed: _clearAll,
           ),
         ],
       ),
@@ -77,7 +149,7 @@ class _NotificationsListScreenState extends State<NotificationsListScreen> {
                     EmptyState(
                       icon: Icons.notifications_none,
                       title: 'No notifications yet',
-                      message: 'Follows, comments, likes and club activity will show up here.',
+                      message: 'Follows, comments, likes and forum activity will show up here.',
                     ),
                   ],
                 );
@@ -85,11 +157,25 @@ class _NotificationsListScreenState extends State<NotificationsListScreen> {
               return ListView.separated(
                 physics: const AlwaysScrollableScrollPhysics(),
                 itemCount: items.length,
-                separatorBuilder: (_, _) => const Divider(color: AppColors.hairline, height: 1),
-                itemBuilder: (_, i) => _NotificationTile(
-                  notification: items[i],
-                  onTap: () => _onTap(items[i]),
-                ),
+                separatorBuilder: (_, _) => Divider(color: AppColors.hairline, height: 1),
+                itemBuilder: (_, i) {
+                  final n = items[i];
+                  return Dismissible(
+                    key: ValueKey(n.id),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      color: Colors.red.shade700,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20),
+                      child: const Icon(Icons.delete_outline, color: Colors.white),
+                    ),
+                    onDismissed: (_) => _delete(n.id),
+                    child: _NotificationTile(
+                      notification: n,
+                      onTap: () => _onTap(n),
+                    ),
+                  );
+                },
               );
             },
           ),

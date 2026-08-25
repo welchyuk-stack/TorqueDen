@@ -66,7 +66,7 @@ class _PartnerPageScreenState extends State<PartnerPageScreen> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(_page.businessName,
-                            style: GoogleFonts.archivo(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.cream)),
+                            style: GoogleFonts.spaceGrotesk(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.cream)),
                       ),
                     ],
                   ),
@@ -164,7 +164,7 @@ class _BannerFallback extends StatelessWidget {
   const _BannerFallback();
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
+    return DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,

@@ -5,6 +5,7 @@ import 'package:torqueden/screens/about_screen.dart' show kAppVersion;
 import 'package:torqueden/support_links.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/utils/open_link.dart';
+import 'package:torqueden/widgets/settings_group.dart';
 
 /// Data & policies hub: opens the hosted Privacy Policy, Terms, and Community
 /// Guidelines, plus the in-app open-source license list. For EEA/UK users it
@@ -33,40 +34,46 @@ class _DataPoliciesScreenState extends State<DataPoliciesScreen> {
       appBar: AppBar(title: const Text('Data & policies')),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 8),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
-            _Tile(
-              icon: Icons.privacy_tip_outlined,
-              label: 'Privacy Policy',
-              external: true,
-              onTap: () => openLink(context, SupportLinks.privacyPolicyUrl),
-            ),
-            _Tile(
-              icon: Icons.description_outlined,
-              label: 'Terms of Service',
-              external: true,
-              onTap: () => openLink(context, SupportLinks.termsUrl),
-            ),
-            _Tile(
-              icon: Icons.groups_outlined,
-              label: 'Community Guidelines',
-              external: true,
-              onTap: () => openLink(context, SupportLinks.communityGuidelinesUrl),
-            ),
-            if (_showAdConsent)
-              _Tile(
-                icon: Icons.ads_click_outlined,
-                label: 'Ad privacy choices',
-                onTap: () => ConsentService.instance.showPrivacyOptionsForm(),
-              ),
-            _Tile(
-              icon: Icons.article_outlined,
-              label: 'Open-source licenses',
-              onTap: () => showLicensePage(
-                context: context,
-                applicationName: 'TorqueDen',
-                applicationVersion: kAppVersion,
-              ),
+            SettingsGroup(
+              children: [
+                _Tile(
+                  icon: Icons.privacy_tip_outlined,
+                  label: 'Privacy Policy',
+                  external: true,
+                  onTap: () => openLink(context, SupportLinks.privacyPolicyUrl),
+                ),
+                _Tile(
+                  icon: Icons.description_outlined,
+                  label: 'Terms of Service',
+                  external: true,
+                  onTap: () => openLink(context, SupportLinks.termsUrl),
+                ),
+                _Tile(
+                  icon: Icons.groups_outlined,
+                  label: 'Community Guidelines',
+                  external: true,
+                  onTap: () =>
+                      openLink(context, SupportLinks.communityGuidelinesUrl),
+                ),
+                if (_showAdConsent)
+                  _Tile(
+                    icon: Icons.ads_click_outlined,
+                    label: 'Ad privacy choices',
+                    onTap: () =>
+                        ConsentService.instance.showPrivacyOptionsForm(),
+                  ),
+                _Tile(
+                  icon: Icons.article_outlined,
+                  label: 'Open-source licenses',
+                  onTap: () => showLicensePage(
+                    context: context,
+                    applicationName: 'TorqueDen',
+                    applicationVersion: kAppVersion,
+                  ),
+                ),
+              ],
             ),
           ],
         ),

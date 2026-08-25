@@ -11,7 +11,7 @@ class Wordmark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = GoogleFonts.archivo(
+    final style = GoogleFonts.spaceGrotesk(
       fontSize: fontSize,
       fontWeight: FontWeight.w800,
       letterSpacing: -0.01 * fontSize,

@@ -1,12 +1,18 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:torqueden/main_shell.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
+import 'package:torqueden/screens/discover_screen.dart';
+import 'package:torqueden/screens/post_viewer_screen.dart';
 import 'package:torqueden/services/entitlements.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/time_ago.dart';
 import 'package:torqueden/widgets/feed_ad_slot.dart';
 import 'package:torqueden/widgets/car/build_tab.dart' show LinkedModChip;
 import 'package:torqueden/widgets/comments_sheet.dart';
@@ -14,8 +20,13 @@ import 'package:torqueden/widgets/moderation_sheet.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/like_button.dart';
 import 'package:torqueden/widgets/post_media_view.dart';
+import 'package:torqueden/screens/create_post_screen.dart';
+import 'package:torqueden/services/feed_prefs.dart';
+import 'package:torqueden/services/challenge_service.dart';
+import 'package:torqueden/services/guest_mode.dart';
+import 'package:torqueden/widgets/guest_nudge_sheet.dart';
 import 'package:torqueden/widgets/notification_bell.dart';
-import 'package:torqueden/widgets/settings_button.dart';
+import 'package:torqueden/models/challenge.dart';
 import 'package:torqueden/widgets/wordmark.dart';
 
 /// Home feed — the latest *posted* build updates from cars the user follows,
@@ -23,35 +34,63 @@ import 'package:torqueden/widgets/wordmark.dart';
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
 
+  /// Fire this to trigger a reload from anywhere (e.g. when the tab is
+  /// re-selected after a follow/unfollow on another screen).
+  static final refreshSignal = StreamController<void>.broadcast();
+
   @override
   State<FeedScreen> createState() => _FeedScreenState();
 }
 
 class _FeedScreenState extends State<FeedScreen> {
   final _client = Supabase.instance.client;
-  // Rows are a mix of _FeedItem (real posts) and SponsoredPost (house ads).
   late Future<List<Object>> _feedFuture;
+  Set<String> _shotTags = {};
+  StreamSubscription<void>? _refreshSub;
+  StreamSubscription<AuthState>? _authSub;
 
   @override
   void initState() {
     super.initState();
     _feedFuture = _load();
+    _refreshSub = FeedScreen.refreshSignal.stream.listen((_) {
+      if (mounted) _refresh();
+    });
+    _authSub = _client.auth.onAuthStateChange.listen((state) {
+      if (state.event == AuthChangeEvent.signedIn ||
+          state.event == AuthChangeEvent.signedOut) {
+        if (mounted) _refresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshSub?.cancel();
+    _authSub?.cancel();
+    super.dispose();
   }
 
   Future<List<Object>> _load() async {
+    // Keep challenge tags fresh so the hide-shot filter stays accurate.
+    ChallengeService.instance.fetchAll().then((challenges) {
+      if (mounted) setState(() => _shotTags = {for (final c in challenges) c.tag});
+    });
     final uid = _client.auth.currentUser?.id;
-    if (uid == null) return const [];
+    if (uid == null) return _loadPublic();
 
     await Moderation.refreshBlocks();
-    final follows =
-        await _client.from('follows').select('car_id').eq('follower_id', uid);
+    final follows = await _client
+        .from('follows')
+        .select('car_id')
+        .eq('follower_id', uid);
     final ids = follows.map((r) => r['car_id'] as String).toList();
     if (ids.isEmpty) return const [];
 
     final rows = await _client
         .from('build_entries')
         .select(
-          'id, title, body, created_at, '
+          'id, title, body, created_at, location_name, tags, '
           'car:cars(id, owner_id, make, model, nickname, photo_url), '
           'post_media(id, url, kind, position), '
           'linked:linked_build_entry_id(title, category), '
@@ -59,19 +98,22 @@ class _FeedScreenState extends State<FeedScreen> {
         )
         .inFilter('car_id', ids)
         .eq('silent', false)
-        .order('created_at', ascending: false);
+        .order('created_at', ascending: false)
+        .limit(50);
 
     final items = <_FeedItem>[];
     for (final row in rows) {
       final carMap = row['car'];
       if (carMap == null) continue;
       // Hide posts from blocked owners.
-      if (Moderation.isBlocked((carMap as Map)['owner_id'] as String?)) continue;
-      final media = ((row['post_media'] as List?) ?? const [])
-          .cast<Map<String, dynamic>>()
-          .map(PostMedia.fromMap)
-          .toList()
-        ..sort((a, b) => a.position.compareTo(b.position));
+      if (Moderation.isBlocked((carMap as Map)['owner_id'] as String?))
+        continue;
+      final media =
+          ((row['post_media'] as List?) ?? const [])
+              .cast<Map<String, dynamic>>()
+              .map(PostMedia.fromMap)
+              .toList()
+            ..sort((a, b) => a.position.compareTo(b.position));
       final likes = (row['post_likes'] as List?) ?? const [];
       items.add(
         _FeedItem(
@@ -85,6 +127,8 @@ class _FeedScreenState extends State<FeedScreen> {
           likedByMe: likes.any((l) => (l as Map)['user_id'] == uid),
           commentCount: ((row['post_comments'] as List?) ?? const []).length,
           linkedModLabel: _linkedLabel(row['linked'] as Map<String, dynamic>?),
+          locationName: row['location_name'] as String?,
+          tags: (row['tags'] as List<dynamic>?)?.cast<String>() ?? const [],
         ),
       );
     }
@@ -92,6 +136,51 @@ class _FeedScreenState extends State<FeedScreen> {
 
     // Premium/Partner get an ad-free feed (once enforced); everyone else has
     // ad slots woven in (filled by AdMob).
+    await Entitlements.refresh();
+    if (!Entitlements.adsEnabled) return items;
+    return _weaveAdSlots(items);
+  }
+
+  /// Public feed for unauthenticated users — latest posts by timestamp.
+  Future<List<Object>> _loadPublic() async {
+    final rows = await _client
+        .from('build_entries')
+        .select(
+          'id, title, body, created_at, location_name, tags, '
+          'car:cars(id, owner_id, make, model, nickname, photo_url), '
+          'post_media(id, url, kind, position), '
+          'linked:linked_build_entry_id(title, category)',
+        )
+        .eq('silent', false)
+        .order('created_at', ascending: false)
+        .limit(50);
+
+    final items = <_FeedItem>[];
+    for (final row in rows) {
+      final carMap = row['car'];
+      if (carMap == null) continue;
+      final media = ((row['post_media'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map(PostMedia.fromMap)
+          .toList()
+        ..sort((a, b) => a.position.compareTo(b.position));
+      items.add(
+        _FeedItem(
+          id: row['id'] as String,
+          title: row['title'] as String,
+          body: row['body'] as String?,
+          createdAt: DateTime.parse(row['created_at'] as String),
+          car: Car.fromMap(carMap as Map<String, dynamic>),
+          media: media,
+          likeCount: 0,
+          likedByMe: false,
+          commentCount: 0,
+          linkedModLabel: _linkedLabel(row['linked'] as Map<String, dynamic>?),
+          locationName: row['location_name'] as String?,
+          tags: (row['tags'] as List<dynamic>?)?.cast<String>() ?? const [],
+        ),
+      );
+    }
     await Entitlements.refresh();
     if (!Entitlements.adsEnabled) return items;
     return _weaveAdSlots(items);
@@ -121,7 +210,9 @@ class _FeedScreenState extends State<FeedScreen> {
     final title = linked['title'] as String?;
     if (title == null || title.isEmpty) return null;
     final category = linked['category'] as String?;
-    return (category != null && category.isNotEmpty) ? '$category · $title' : title;
+    return (category != null && category.isNotEmpty)
+        ? '$category · $title'
+        : title;
   }
 
   Future<void> _refresh() async {
@@ -133,81 +224,127 @@ class _FeedScreenState extends State<FeedScreen> {
   }
 
   Future<void> _openCar(Car car) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => CarDetailScreen(car: car)),
-    );
+    await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => CarDetailScreen(car: car)));
+    // Refresh so any follow/unfollow change is reflected immediately.
+    if (mounted) _refresh();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        // Nudged right a touch and sized up a little from the default 22.
-        title: const Padding(
-          padding: EdgeInsets.only(left: 6),
-          child: Wordmark(fontSize: 24),
-        ),
-        actions: const [NotificationBell(), SettingsButton()],
-      ),
-      body: SafeArea(
-        child: FutureBuilder<List<Object>>(
-          future: _feedFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(color: AppColors.ember),
-              );
-            }
-            if (snapshot.hasError) {
-              return _ScrollableCenter(
-                onRefresh: _refresh,
-                child: EmptyState(
-                  icon: Icons.error_outline,
-                  title: 'Could not load your feed',
-                  message: '${snapshot.error}',
-                  action: FilledButton(
-                    onPressed: _refresh,
-                    child: const Text('Try again'),
-                  ),
+      backgroundColor: Colors.transparent,
+      body: NestedScrollView(
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverAppBar(
+            floating: true,
+            snap: true,
+            centerTitle: true,
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            title: const Wordmark(fontSize: 24),
+            leadingWidth: 56,
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: const NotificationBell(),
+            ),
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: 12),
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  icon: Icon(Icons.add, color: AppColors.cream, size: 32),
+                  onPressed: () async {
+                    if (GuestMode.isGuest) {
+                      await showGuestNudge(context, reason: 'post build updates');
+                      return;
+                    }
+                    final posted = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(builder: (_) => const CreatePostScreen()),
+                    );
+                    if (posted == true && mounted) _refresh();
+                  },
                 ),
-              );
-            }
-
-            final items = snapshot.data ?? const <Object>[];
-            if (items.isEmpty) {
-              return _ScrollableCenter(
-                onRefresh: _refresh,
-                child: const EmptyState(
-                  icon: Icons.dynamic_feed_outlined,
-                  title: 'Your feed is quiet',
-                  message:
-                      'Follow some cars in the Search tab and their build '
-                      'updates show up here.',
-                ),
-              );
-            }
-
-            return RefreshIndicator(
-              color: AppColors.ember,
-              backgroundColor: AppColors.graphite,
-              onRefresh: _refresh,
-              child: ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: items.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (_, i) {
-                  final row = items[i];
-                  if (row is _AdSlot) return const FeedAdSlot();
-                  final item = row as _FeedItem;
-                  return _FeedCard(
-                    item: item,
-                    onOpenProfile: () => _openCar(item.car),
-                    onChanged: _refresh,
-                  );
-                },
               ),
-            );
-          },
+            ],
+          ),
+        ],
+        body: ValueListenableBuilder<bool>(
+          valueListenable: FeedPrefs.mediaOnly,
+          builder: (context, _, __) => ValueListenableBuilder<bool>(
+            valueListenable: FeedPrefs.hideShot,
+            builder: (context, _, __) => FutureBuilder<List<Object>>(
+              future: _feedFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: AppColors.ember),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return _ScrollableCenter(
+                    onRefresh: _refresh,
+                    child: EmptyState(
+                      icon: Icons.error_outline,
+                      title: 'Could not load your feed',
+                      message: '${snapshot.error}',
+                      action: FilledButton(
+                        onPressed: _refresh,
+                        child: const Text('Try again'),
+                      ),
+                    ),
+                  );
+                }
+                final rawItems = snapshot.data ?? const <Object>[];
+                final mediaOnly = FeedPrefs.mediaOnly.value;
+                final hideShot = FeedPrefs.hideShot.value;
+                final items = rawItems.where((obj) {
+                  if (obj is! _FeedItem) return true;
+                  if (mediaOnly && obj.media.isEmpty) return false;
+                  if (hideShot && obj.tags.any(_shotTags.contains)) return false;
+                  return true;
+                }).toList();
+                final isLoggedIn = _client.auth.currentUser != null;
+                if (items.isEmpty) {
+                  return _ScrollableCenter(
+                    onRefresh: _refresh,
+                    child: EmptyState(
+                      icon: Icons.dynamic_feed_outlined,
+                      title: isLoggedIn ? 'Your feed is quiet' : 'Welcome to TorqueDen',
+                      message: isLoggedIn
+                          ? 'Follow some cars to see their build updates here.'
+                          : 'Discover and follow car builds from the community.',
+                      action: FilledButton.icon(
+                        onPressed: () => MainShell.jumpToDiscover.add(null),
+                        icon: const Icon(Icons.search, size: 18),
+                        label: Text(isLoggedIn ? 'Find cars to follow' : 'Explore builds'),
+                      ),
+                    ),
+                  );
+                }
+                return RefreshIndicator(
+                  color: AppColors.ember,
+                  backgroundColor: AppColors.graphite,
+                  onRefresh: _refresh,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.only(top: 8, bottom: 120),
+                    itemCount: items.length,
+                    itemBuilder: (_, i) {
+                      final row = items[i];
+                      if (row is _AdSlot) return const FeedAdSlot();
+                      final item = row as _FeedItem;
+                      return _FeedCard(
+                        item: item,
+                        onOpenProfile: () => _openCar(item.car),
+                        onChanged: _refresh,
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -252,6 +389,8 @@ class _FeedItem {
     this.likedByMe = false,
     this.commentCount = 0,
     this.linkedModLabel,
+    this.locationName,
+    this.tags = const [],
   });
 
   final String id;
@@ -264,6 +403,8 @@ class _FeedItem {
   final bool likedByMe;
   final int commentCount;
   final String? linkedModLabel;
+  final String? locationName;
+  final List<String> tags;
 }
 
 class _FeedCard extends StatelessWidget {
@@ -273,12 +414,152 @@ class _FeedCard extends StatelessWidget {
   final VoidCallback? onOpenProfile;
   final Future<void> Function()? onChanged;
 
-  static const _months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
+  String? get _location => (item.locationName?.trim().isNotEmpty == true
+          ? item.locationName
+          : item.car.locationName)
+      ?.trim()
+      .nullIfEmpty;
 
-  String _formatDate(DateTime d) => '${d.day} ${_months[d.month - 1]} ${d.year}';
+  Future<void> _showOwnerActions(BuildContext context) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppColors.graphite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: Icon(Icons.edit_outlined, color: AppColors.cream),
+              title: Text('Edit caption',
+                  style: GoogleFonts.inter(color: AppColors.cream, fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: AppColors.danger),
+              title: Text('Delete post',
+                  style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (action == 'edit' && context.mounted) await _editCaption(context);
+    if (action == 'delete' && context.mounted) await _confirmDeletePost(context);
+  }
+
+  Future<void> _editCaption(BuildContext context) async {
+    final ctrl = TextEditingController(text: item.title);
+    final newCaption = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Edit caption',
+            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 4,
+          maxLength: 500,
+          style: GoogleFonts.inter(color: AppColors.cream),
+          cursorColor: AppColors.ember,
+          decoration: InputDecoration(
+            hintText: 'Caption…',
+            hintStyle: GoogleFonts.inter(color: AppColors.steel),
+            counterStyle: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 11),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: AppColors.hairline),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: AppColors.ember),
+            ),
+            contentPadding: const EdgeInsets.all(12),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () { ctrl.dispose(); Navigator.pop(ctx); },
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              final v = ctrl.text.trim();
+              ctrl.dispose();
+              Navigator.pop(ctx, v.isEmpty ? null : v);
+            },
+            child: Text('Save',
+                style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (newCaption == null || !context.mounted) return;
+    try {
+      await Supabase.instance.client
+          .from('build_entries')
+          .update({'title': newCaption})
+          .eq('id', item.id);
+      await onChanged?.call();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update post: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmDeletePost(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Delete post?',
+            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: Text('This will permanently remove the post and all its media.',
+            style: GoogleFonts.inter(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete',
+                style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final client = Supabase.instance.client;
+      // Fetch storage paths before deleting (cascade will remove post_media rows).
+      final mediaRows = await client
+          .from('post_media')
+          .select('url')
+          .eq('build_entry_id', item.id);
+      final paths = (mediaRows as List)
+          .map((r) => PostMedia.fromMap(r as Map<String, dynamic>).storagePath)
+          .whereType<String>()
+          .toList();
+      if (paths.isNotEmpty) {
+        await client.storage.from('car-photos').remove(paths);
+      }
+      await client.from('build_entries').delete().eq('id', item.id);
+      await onChanged?.call();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete post: $e')),
+        );
+      }
+    }
+  }
 
   Future<void> _openComments(BuildContext context) async {
     await showModalBottomSheet<void>(
@@ -297,116 +578,180 @@ class _FeedCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final car = item.car;
     final body = item.body?.trim() ?? '';
-    final hasBody = body.isNotEmpty;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.graphite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.cream, width: 0.5),
-      ),
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Header ──────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 4, 8),
+          child: Row(
             children: [
-              _Thumbnail(car: car),
-              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: onOpenProfile,
+                child: _Thumbnail(car: car),
+              ),
+              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      car.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.archivo(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.cream,
+                child: GestureDetector(
+                  onTap: onOpenProfile,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        car.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.spaceGrotesk(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.cream,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _formatDate(item.createdAt),
-                      style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
-                    ),
-                  ],
+                      _MetaRow(
+                        when: timeAgo(item.createdAt),
+                        location: _location,
+                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              // Dedicated button to open the profile, so tapping the post body
-              // does nothing (better for scrolling on touch screens).
               IconButton(
-                onPressed: onOpenProfile,
-                icon: const Icon(Icons.arrow_forward, size: 20),
-                color: AppColors.steel,
-                tooltip: 'View car',
-              ),
-              IconButton(
-                onPressed: () => showModerationSheet(
-                  context,
-                  targetType: 'post',
-                  targetId: item.id,
-                  authorId: car.ownerId,
-                  onBlocked: () => onChanged?.call(),
-                ),
+                onPressed: () {
+                  final uid = Supabase.instance.client.auth.currentUser?.id;
+                  if (uid != null && uid == car.ownerId) {
+                    _showOwnerActions(context);
+                  } else {
+                    showModerationSheet(
+                      context,
+                      targetType: 'post',
+                      targetId: item.id,
+                      authorId: car.ownerId,
+                      onBlocked: () => onChanged?.call(),
+                    );
+                  }
+                },
                 icon: const Icon(Icons.more_vert, size: 20),
                 color: AppColors.steel,
-                tooltip: 'More',
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          if (item.media.isNotEmpty) ...[
-            PostMediaView(media: item.media),
-            const SizedBox(height: 12),
-          ],
-          Text(
-            item.title,
-            style: GoogleFonts.archivo(
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              color: AppColors.cream,
-            ),
-          ),
-          if (hasBody) ...[
-            const SizedBox(height: 6),
-            Text(
-              body,
-              style: GoogleFonts.inter(
-                fontSize: 15,
-                color: AppColors.textSecondary,
-                height: 1.5,
+        ),
+        // ── Media / text card ────────────────────────────────────
+        if (item.media.isEmpty)
+          Container(
+            width: double.infinity,
+            color: AppColors.graphite,
+            padding: const EdgeInsets.fromLTRB(0, 14, 20, 14),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(width: 3, color: AppColors.ember, margin: const EdgeInsets.only(left: 16, right: 14)),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.title,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.cream,
+                            height: 1.35,
+                          ),
+                        ),
+                        if ((item.body?.trim() ?? '').isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          _ExpandableBody(body: item.body!.trim()),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-          if (item.linkedModLabel != null) ...[
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: LinkedModChip(label: item.linkedModLabel!),
+          ),
+        if (item.media.isNotEmpty)
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => PostViewerScreen(
+                  media: PostMedia(
+                    id: item.media.first.id,
+                    url: item.media.first.url,
+                    kind: item.media.first.kind,
+                    position: item.media.first.position,
+                    buildEntryId: item.id,
+                    caption: item.title,
+                    tags: item.tags,
+                  ),
+                ),
+              ),
             ),
-          ],
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            child: AspectRatio(
+              aspectRatio: 4 / 3,
+              child: PostMediaView(media: item.media, fill: true),
+            ),
+          ),
+        // ── Caption + body (media posts only — text posts show title in card) ─
+        if (item.media.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.title,
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.cream,
+                ),
+              ),
+              if (body.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  body,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+              ],
+              if (item.linkedModLabel != null) ...[
+                const SizedBox(height: 8),
+                LinkedModChip(label: item.linkedModLabel!),
+              ],
+              if (item.tags.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _TagRow(tags: item.tags),
+              ],
+            ],
+          ),
+        ),
+        // ── Footer ───────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          child: Row(
             children: [
               LikeButton(
                 entryId: item.id,
                 initialLiked: item.likedByMe,
                 initialCount: item.likeCount,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               InkWell(
                 onTap: () => _openComments(context),
                 borderRadius: BorderRadius.circular(8),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.mode_comment_outlined, size: 20, color: AppColors.steel),
+                      Icon(Icons.mode_comment_outlined, size: 20, color: AppColors.steel),
                       const SizedBox(width: 6),
                       Text(
                         '${item.commentCount}',
@@ -422,6 +767,99 @@ class _FeedCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+        // ── Divider ──────────────────────────────────────────────
+        const Divider(height: 24, thickness: 0.5),
+      ],
+    );
+  }
+}
+
+class _ExpandableBody extends StatefulWidget {
+  const _ExpandableBody({required this.body});
+  final String body;
+
+  @override
+  State<_ExpandableBody> createState() => _ExpandableBodyState();
+}
+
+class _ExpandableBodyState extends State<_ExpandableBody> {
+  bool _expanded = false;
+  static const _maxLines = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final span = TextSpan(
+          text: widget.body,
+          style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.55),
+        );
+        final tp = TextPainter(text: span, maxLines: _maxLines, textDirection: TextDirection.ltr)
+          ..layout(maxWidth: constraints.maxWidth);
+        final overflows = tp.didExceedMaxLines;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.body,
+              style: GoogleFonts.inter(fontSize: 14, color: AppColors.textSecondary, height: 1.55),
+              maxLines: _expanded ? null : _maxLines,
+              overflow: _expanded ? null : TextOverflow.ellipsis,
+            ),
+            if (overflows) ...[
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Text(
+                  _expanded ? 'Show less' : 'Read more',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ember,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Horizontally scrollable row of tappable hashtag chips.
+/// Tapping one pushes a Discover screen pre-filtered to that tag.
+class _TagRow extends StatelessWidget {
+  const _TagRow({required this.tags});
+
+  final List<String> tags;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final tag in tags) ...[
+            GestureDetector(
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => DiscoverScreen(initialQuery: '#$tag'),
+                ),
+              ),
+              child: Text(
+                '#$tag',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.ember,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
         ],
       ),
     );
@@ -448,7 +886,7 @@ class _Thumbnail extends StatelessWidget {
         height: 44,
         child: car.hasPhoto
             ? Image.network(
-                car.photoUrl!,
+                car.thumbnailUrl()!,
                 fit: BoxFit.cover,
                 errorBuilder: (_, _, _) => const _ThumbFallback(),
                 loadingBuilder: (context, child, progress) =>
@@ -460,6 +898,36 @@ class _Thumbnail extends StatelessWidget {
   }
 }
 
+/// "2h" or "2h · 📍 Manchester" — time always first, then an optional ember
+/// pin icon + location label. Kept as a widget so the icon can be coloured.
+class _MetaRow extends StatelessWidget {
+  const _MetaRow({required this.when, required this.style, this.location});
+  final String when;
+  final String? location;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    if (location == null || location!.isEmpty) {
+      return Text(when, maxLines: 1, overflow: TextOverflow.ellipsis, style: style);
+    }
+    return Row(
+      children: [
+        Text('$when · ', style: style),
+        Icon(Icons.location_on, size: 11, color: AppColors.ember),
+        const SizedBox(width: 2),
+        Expanded(
+          child: Text(location!, maxLines: 1, overflow: TextOverflow.ellipsis, style: style),
+        ),
+      ],
+    );
+  }
+}
+
+extension on String {
+  String? get nullIfEmpty => isEmpty ? null : this;
+}
+
 class _ThumbFallback extends StatelessWidget {
   const _ThumbFallback();
 
@@ -468,7 +936,98 @@ class _ThumbFallback extends StatelessWidget {
     return Container(
       color: AppColors.graphiteRaised,
       alignment: Alignment.center,
-      child: const Icon(Icons.directions_car_outlined, color: AppColors.steel, size: 22),
+      child: Icon(
+        Icons.directions_car_outlined,
+        color: AppColors.steel,
+        size: 22,
+      ),
+    );
+  }
+}
+
+class _ShowdownPill extends StatefulWidget {
+  const _ShowdownPill({required this.challenge});
+  final Challenge challenge;
+
+  @override
+  State<_ShowdownPill> createState() => _ShowdownPillState();
+}
+
+class _ShowdownPillState extends State<_ShowdownPill>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const w = 140.0;
+    const h = 34.0;
+    const pad = 8.0;
+
+    return SizedBox(
+      width: w + pad * 2,
+      height: h + pad * 2,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedBuilder(
+            animation: _ctrl,
+            builder: (_, __) => Transform.rotate(
+              angle: _ctrl.value * 2 * math.pi,
+              child: Container(
+                width: w + pad * 2,
+                height: h + pad * 2,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(h / 2 + pad),
+                  gradient: const SweepGradient(
+                    colors: [
+                      Color(0x00E85A00),
+                      Color(0xAAE85A00),
+                      Color(0xFFFF9500),
+                      Color(0xAAE85A00),
+                      Color(0x00E85A00),
+                    ],
+                    stops: [0.0, 0.2, 0.5, 0.8, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Container(
+            width: w,
+            height: h,
+            decoration: BoxDecoration(
+              color: const Color(0xFF111111),
+              borderRadius: BorderRadius.circular(h / 2),
+            ),
+            child: Center(
+              child: Text(
+                'THE SHOT',
+                style: GoogleFonts.spaceGrotesk(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: 1.8,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

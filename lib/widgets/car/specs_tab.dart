@@ -3,6 +3,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/car_spec.dart';
+import 'package:torqueden/models/challenge.dart';
+import 'package:torqueden/services/challenge_service.dart';
+import 'package:torqueden/services/dm_service.dart';
 import 'package:torqueden/theme.dart';
 
 /// Specs tab for a car's detail view.
@@ -12,9 +15,12 @@ import 'package:torqueden/theme.dart';
 /// the `car_specs` table (addable and deletable). Self-contained scrollable so
 /// it works as a [TabBarView] child.
 class SpecsTab extends StatefulWidget {
-  const SpecsTab({super.key, required this.car});
+  const SpecsTab({super.key, required this.car, this.isOwner = false});
 
   final Car car;
+
+  /// True when the signed-in user owns this car (hides owner card + message btn).
+  final bool isOwner;
 
   @override
   State<SpecsTab> createState() => _SpecsTabState();
@@ -23,11 +29,24 @@ class SpecsTab extends StatefulWidget {
 class _SpecsTabState extends State<SpecsTab> {
   final _client = Supabase.instance.client;
   late Future<List<CarSpec>> _specsFuture;
+  Map<String, dynamic>? _ownerProfile;
 
   @override
   void initState() {
     super.initState();
     _specsFuture = _loadSpecs();
+    if (!widget.isOwner && widget.car.ownerId != null) _loadOwner();
+  }
+
+  Future<void> _loadOwner() async {
+    try {
+      final row = await _client
+          .from('profiles')
+          .select('id, username, display_name, avatar_url')
+          .eq('id', widget.car.ownerId!)
+          .single();
+      if (mounted) setState(() => _ownerProfile = row);
+    } catch (_) {}
   }
 
   Future<List<CarSpec>> _loadSpecs() async {
@@ -71,7 +90,7 @@ class _SpecsTabState extends State<SpecsTab> {
         backgroundColor: AppColors.graphite,
         title: Text(
           'Delete spec?',
-          style: GoogleFonts.archivo(
+          style: GoogleFonts.spaceGrotesk(
             fontWeight: FontWeight.w700,
             color: AppColors.cream,
           ),
@@ -109,9 +128,9 @@ class _SpecsTabState extends State<SpecsTab> {
       await _refresh();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not delete spec: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not delete spec: $e')));
     }
   }
 
@@ -124,6 +143,21 @@ class _SpecsTabState extends State<SpecsTab> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (!widget.isOwner && widget.car.ownerId != null) ...[
+            _OwnerCard(
+              profile: _ownerProfile,
+              onMessage: _ownerProfile == null
+                  ? null
+                  : () => DmService.openOrCreate(
+                        context: context,
+                        otherUserId: _ownerProfile!['id'] as String,
+                        otherUsername: _ownerProfile!['username'] as String,
+                        otherDisplayName: _ownerProfile!['display_name'] as String?,
+                        otherAvatarUrl: _ownerProfile!['avatar_url'] as String?,
+                      ),
+            ),
+            const SizedBox(height: 16),
+          ],
           _IdentityCard(car: widget.car),
           const SizedBox(height: 24),
           Row(
@@ -131,29 +165,30 @@ class _SpecsTabState extends State<SpecsTab> {
               Expanded(
                 child: Text(
                   'Performance & specs',
-                  style: GoogleFonts.archivo(
+                  style: GoogleFonts.spaceGrotesk(
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                     color: AppColors.cream,
                   ),
                 ),
               ),
-              OutlinedButton.icon(
-                onPressed: _openAddSpec,
-                icon: const Icon(Icons.add, size: 18),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.ember,
-                  side: const BorderSide(color: AppColors.hairline),
-                  textStyle: GoogleFonts.inter(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
+              if (widget.isOwner)
+                OutlinedButton.icon(
+                  onPressed: _openAddSpec,
+                  icon: const Icon(Icons.add, size: 18),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.ember,
+                    side: BorderSide(color: AppColors.hairline),
+                    textStyle: GoogleFonts.inter(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                  label: const Text('Add spec'),
                 ),
-                label: const Text('Add spec'),
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -187,7 +222,7 @@ class _SpecsTabState extends State<SpecsTab> {
                           onPressed: _refresh,
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.ember,
-                            side: const BorderSide(color: AppColors.hairline),
+                            side: BorderSide(color: AppColors.hairline),
                           ),
                           child: const Text('Try again'),
                         ),
@@ -215,10 +250,12 @@ class _SpecsTabState extends State<SpecsTab> {
                   children: [
                     for (var i = 0; i < specs.length; i++) ...[
                       if (i > 0)
-                        const Divider(height: 1, color: AppColors.hairline),
+                        Divider(height: 1, color: AppColors.hairline),
                       _SpecRow(
                         spec: specs[i],
-                        onDelete: () => _deleteSpec(specs[i]),
+                        onDelete: widget.isOwner
+                            ? () => _deleteSpec(specs[i])
+                            : null,
                       ),
                     ],
                   ],
@@ -277,15 +314,118 @@ class _NotesBlock extends StatelessWidget {
   }
 }
 
-/// Fixed card describing the car, built from the [Car] object (not the DB).
-class _IdentityCard extends StatelessWidget {
-  const _IdentityCard({required this.car});
+/// Owner row: avatar + name + Message button. Shows a skeleton while loading.
+class _OwnerCard extends StatelessWidget {
+  const _OwnerCard({required this.profile, required this.onMessage});
 
-  final Car car;
+  final Map<String, dynamic>? profile;
+  final VoidCallback? onMessage;
 
   @override
   Widget build(BuildContext context) {
-    final rows = <(String, String)>[
+    final avatarUrl = profile?['avatar_url'] as String?;
+    final displayName = (profile?['display_name'] as String?)?.trim();
+    final username = profile?['username'] as String?;
+    final name = (displayName?.isNotEmpty ?? false)
+        ? displayName!
+        : (username != null ? '@$username' : null);
+    final loading = profile == null;
+
+    return _SpecsCard(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: AppColors.graphiteRaised,
+              backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+              child: loading || avatarUrl != null
+                  ? null
+                  : Text(
+                      (name ?? '?').characters.first.toUpperCase(),
+                      style: GoogleFonts.archivo(
+                          fontWeight: FontWeight.w700, color: AppColors.cream, fontSize: 16),
+                    ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Owner',
+                    style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+                  ),
+                  const SizedBox(height: 2),
+                  loading
+                      ? Container(
+                          height: 14,
+                          width: 100,
+                          decoration: BoxDecoration(
+                            color: AppColors.graphiteRaised,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        )
+                      : Text(
+                          name ?? 'Unknown',
+                          style: GoogleFonts.inter(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.cream),
+                        ),
+                ],
+              ),
+            ),
+            if (!loading)
+              TextButton.icon(
+                onPressed: onMessage,
+                icon: Icon(Icons.forum_outlined, size: 18, color: AppColors.ember),
+                label: Text(
+                  'Message',
+                  style: GoogleFonts.inter(
+                      fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.ember),
+                ),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(color: AppColors.ember.withValues(alpha: 0.3)),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Fixed card describing the car, built from the [Car] object (not the DB).
+/// Also loads and displays any Shot trophies in a ghosted Awards section.
+class _IdentityCard extends StatefulWidget {
+  const _IdentityCard({required this.car});
+  final Car car;
+
+  @override
+  State<_IdentityCard> createState() => _IdentityCardState();
+}
+
+class _IdentityCardState extends State<_IdentityCard> {
+  List<CarBadge> _badges = [];
+
+  @override
+  void initState() {
+    super.initState();
+    ChallengeService.instance.fetchBadgesForCar(widget.car.id).then((b) {
+      if (mounted) setState(() => _badges = b);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final car = widget.car;
+    final cells = <(String, String)>[
       ('Make', car.make),
       ('Model', car.model),
       if (car.chassisModel != null && car.chassisModel!.trim().isNotEmpty)
@@ -298,37 +438,163 @@ class _IdentityCard extends StatelessWidget {
     ];
 
     return _SpecsCard(
-      child: Column(
-        children: [
-          for (var i = 0; i < rows.length; i++) ...[
-            if (i > 0) const Divider(height: 1, color: AppColors.hairline),
-            _TwoColumnRow(label: rows[i].$1, value: rows[i].$2),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < cells.length; i += 2) ...[
+              if (i > 0) const SizedBox(height: 14),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: _IdentityCell(cell: cells[i])),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: i + 1 < cells.length
+                        ? _IdentityCell(cell: cells[i + 1])
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
+            ],
+            if (_badges.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Divider(color: AppColors.hairline, height: 1),
+              const SizedBox(height: 14),
+              Text(
+                'Awards',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textMuted,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _badges.map((b) => _AwardChip(badge: b)).toList(),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
 }
 
-/// One DB-backed spec row: label/value plus a delete button.
+class _AwardChip extends StatelessWidget {
+  const _AwardChip({required this.badge});
+  final CarBadge badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final month = _monthAbbr(badge.awardedAt.month);
+    final year = badge.awardedAt.year;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.ember.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.ember.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('🏆', style: TextStyle(fontSize: 11)),
+          const SizedBox(width: 5),
+          Text(
+            '${badge.challengeTitle} — $month $year',
+            style: GoogleFonts.inter(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _monthAbbr(int m) => const [
+    '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ][m];
+}
+
+/// One label-over-value cell in the identity grid.
+class _IdentityCell extends StatelessWidget {
+  const _IdentityCell({required this.cell});
+
+  final (String, String) cell;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          cell.$1,
+          style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          cell.$2,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: AppColors.cream,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One DB-backed spec row: label/value with delete tucked behind a kebab —
+/// a bare trash can on every row keeps a destructive action one mis-tap away.
 class _SpecRow extends StatelessWidget {
   const _SpecRow({required this.spec, required this.onDelete});
 
   final CarSpec spec;
-  final VoidCallback onDelete;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
     return _TwoColumnRow(
       label: spec.label,
       value: spec.value,
-      trailing: IconButton(
-        onPressed: onDelete,
-        icon: const Icon(Icons.delete_outline, size: 20),
-        color: AppColors.textMuted,
-        tooltip: 'Delete spec',
-        visualDensity: VisualDensity.compact,
-      ),
+      trailing: onDelete == null
+          ? null
+          : PopupMenuButton<String>(
+              icon: Icon(Icons.more_vert, size: 20, color: AppColors.textMuted),
+              tooltip: 'More',
+              color: AppColors.graphiteRaised,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              padding: EdgeInsets.zero,
+              onSelected: (v) {
+                if (v == 'delete') onDelete!();
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.delete_outline,
+                          size: 20, color: AppColors.danger),
+                      const SizedBox(width: 10),
+                      Text('Delete spec',
+                          style: GoogleFonts.inter(color: AppColors.danger)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
@@ -392,11 +658,7 @@ class _SpecsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.graphite,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.hairline),
-      ),
+      decoration: AppDecorations.glassCard(radius: 12),
       child: child,
     );
   }
@@ -485,7 +747,7 @@ class _AddSpecSheetState extends State<_AddSpecSheet> {
           children: [
             Text(
               'Add spec',
-              style: GoogleFonts.archivo(
+              style: GoogleFonts.spaceGrotesk(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
                 color: AppColors.cream,

@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -25,7 +26,7 @@ class PushService {
   /// Initialise Firebase + messaging once. Safe to call at startup; fails
   /// quietly (leaving push off) if Firebase isn't configured yet.
   Future<void> init() async {
-    if (_ready) return;
+    if (_ready || kIsWeb) return;
     try {
       await Firebase.initializeApp();
       _messaging = FirebaseMessaging.instance;

@@ -58,6 +58,14 @@
   .btn:hover { background: rgba(243,236,225,0.06); }
   .btn-primary { background: var(--td-ember); color: var(--td-on-ember); border-color: transparent; }
   .btn-primary:hover { background: var(--td-ember-hover); }
+  .btn-danger { background: rgba(229,72,77,0.15); color: #E5484D; border-color: rgba(229,72,77,0.3); }
+  .btn-danger:hover { background: rgba(229,72,77,0.25); }
+  .btn-warn { background: rgba(255,180,0,0.15); color: #FFB400; border-color: rgba(255,180,0,0.3); }
+  .btn-warn:hover { background: rgba(255,180,0,0.25); }
+  .btn-ban { background: #E5484D; color: #fff; border-color: transparent; }
+  .btn-ban:hover { background: #c93a3f; }
+  .strike-pill { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; font-weight:700; background:rgba(229,72,77,0.18); color:#E5484D; margin-left:6px; }
+  .content-preview { margin-top:4px; font-size:12px; color:var(--td-text-2); font-style:italic; max-width:420px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .btn-sm { padding: 5px 12px; font-size: 12px; }
 
   #gate { max-width: 420px; margin: 120px auto; padding: 32px; text-align: center; }
@@ -84,6 +92,16 @@
   .report-actions { display: flex; gap: 6px; }
   .revenue-note { color: var(--td-text-muted); font-size: 12px; margin-top: 10px; }
   .revenue-note a { color: var(--td-ember); }
+  .usage-row { display: flex; flex-direction: column; gap: 14px; }
+  .usage-item { display: flex; flex-direction: column; gap: 5px; }
+  .usage-label { display: flex; justify-content: space-between; font-size: 13px; }
+  .usage-label .name { color: var(--td-text-2); font-weight: 500; }
+  .usage-label .value { color: var(--td-text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .usage-track { background: rgba(243,236,225,0.08); border-radius: 99px; height: 7px; overflow: hidden; }
+  .usage-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; background: var(--td-ember); }
+  .usage-fill.warn  { background: #FFB400; }
+  .usage-fill.crit  { background: #E5484D; }
+  .usage-headroom { font-size: 11px; color: var(--td-text-muted); }
   #dashboard { display: none; }
 </style>
 </head>
@@ -143,9 +161,29 @@
       <a href="https://apps.admob.com" target="_blank" rel="noopener">AdMob</a> (ads) — hook up their APIs later if you want $ figures pulled in here too.
     </div>
 
+    <div class="section-title">Supabase project usage <span style="font-size:11px; color:var(--td-text-muted); text-transform:none; letter-spacing:0;">(free tier limits)</span></div>
+    <div class="panel glass" id="usage-panel">
+      <div class="usage-row" id="usage-list">
+        <div style="color:var(--td-text-muted); font-size:13px;">Add <code>SUPABASE_PAT</code> secret to enable usage tracking.</div>
+      </div>
+    </div>
+
     <div class="section-title">Moderation — open reports (<span id="stat-open-reports">0</span>)</div>
     <div class="panel glass">
       <div id="reports-list"></div>
+    </div>
+
+    <div class="section-title">Broadcast message</div>
+    <div class="panel glass" style="padding:24px;">
+      <p style="color:var(--td-text-2); font-size:13px; margin:0 0 16px;">Sends a notification to <strong style="color:var(--td-text);">every user</strong>. Appears in their notification bell. Use for updates, announcements, and news.</p>
+      <div style="display:flex; flex-direction:column; gap:12px;">
+        <input id="broadcast-title" type="text" maxlength="80" placeholder="Title (e.g. New feature: Direct Messages)" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid rgba(243,236,225,0.16); background:rgba(0,0,0,0.3); color:var(--td-text); font-size:14px; box-sizing:border-box;">
+        <textarea id="broadcast-body" rows="3" maxlength="300" placeholder="Optional message body…" style="width:100%; padding:10px 14px; border-radius:8px; border:1px solid rgba(243,236,225,0.16); background:rgba(0,0,0,0.3); color:var(--td-text); font-size:14px; resize:vertical; font-family:inherit; box-sizing:border-box;"></textarea>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <button id="broadcast-btn" class="btn btn-primary" onclick="sendBroadcast()">Send to all users</button>
+          <span id="broadcast-status" style="font-size:13px; color:var(--td-text-2);"></span>
+        </div>
+      </div>
     </div>
 
     <div class="section-title">Recent signups</div>
@@ -193,20 +231,86 @@
     return Math.floor(s / 86400) + 'd ago';
   }
 
-  async function resolveReport(id, status, btn) {
-    btn.disabled = true;
+  async function postAction(payload, btns) {
+    btns.forEach(b => b.disabled = true);
     try {
       const res = await fetch(FUNCTION_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': getKey() },
-        body: JSON.stringify({ action: 'resolve_report', reportId: id, status }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
       load();
     } catch (e) {
-      alert('Failed to update report: ' + e.message);
-      btn.disabled = false;
+      alert('Action failed: ' + e.message);
+      btns.forEach(b => b.disabled = false);
     }
+  }
+
+  function getBtns(id) {
+    const row = document.getElementById('report-' + id);
+    return row ? [...row.querySelectorAll('button')] : [];
+  }
+
+  function noAction(id) {
+    if (!confirm('Mark this report as reviewed with no action taken?')) return;
+    postAction({ action: 'resolve_report', reportId: id, status: 'dismissed' }, getBtns(id));
+  }
+
+  function warnUser(id) {
+    if (!confirm('Issue a formal warning to this user? They will receive a notification. Strike count will be incremented.')) return;
+    postAction({ action: 'warn', reportId: id }, getBtns(id));
+  }
+
+  function deleteContent(id, targetType) {
+    if (!confirm(`Delete this ${targetType}? This cannot be undone.`)) return;
+    postAction({ action: 'delete_content', reportId: id }, getBtns(id));
+  }
+
+  function deleteAndBan(id, targetType) {
+    if (!confirm(`Delete this ${targetType} AND permanently ban the user? This cannot be undone.`)) return;
+    postAction({ action: 'delete_and_ban', reportId: id }, getBtns(id));
+  }
+
+  function fmtBytes(b) {
+    if (b == null) return '—';
+    if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+    if (b >= 1048576)    return (b / 1048576).toFixed(1) + ' MB';
+    if (b >= 1024)       return (b / 1024).toFixed(0) + ' KB';
+    return b + ' B';
+  }
+
+  function renderUsage(usage) {
+    const el = document.getElementById('usage-list');
+    if (!usage) {
+      el.innerHTML = '<div style="color:var(--td-text-muted); font-size:13px;">Add <code>SUPABASE_PAT</code> secret to enable usage tracking. See instructions below.</div>';
+      return;
+    }
+    const lim = usage.limits;
+    const metrics = [
+      { name: 'Database size',       value: usage.db_size_bytes,        limit: lim.db_size_bytes,        fmt: fmtBytes },
+      { name: 'Storage used',        value: usage.storage_size_bytes,   limit: lim.storage_size_bytes,   fmt: fmtBytes },
+      { name: 'Bandwidth (egress)',  value: usage.egress_bytes,         limit: lim.egress_bytes,         fmt: fmtBytes },
+      { name: 'Monthly active users',value: usage.monthly_active_users, limit: lim.monthly_active_users, fmt: fmt },
+      { name: 'Edge fn invocations', value: usage.func_invocations,     limit: lim.func_invocations,     fmt: fmt },
+    ];
+    el.innerHTML = metrics.map(m => {
+      const v = m.value ?? 0;
+      const pct = Math.min(100, Math.round((v / m.limit) * 100));
+      const fillClass = pct >= 90 ? 'crit' : pct >= 70 ? 'warn' : '';
+      const headroom = m.fmt === fmtBytes
+        ? fmtBytes(m.limit - v) + ' remaining'
+        : fmt(m.limit - v) + ' remaining';
+      return `
+        <div class="usage-item">
+          <div class="usage-label">
+            <span class="name">${m.name}</span>
+            <span class="value">${m.fmt(v)} <span style="color:var(--td-text-muted); font-weight:400;">/ ${m.fmt(m.limit)}</span> · ${pct}%</span>
+          </div>
+          <div class="usage-track"><div class="usage-fill ${fillClass}" style="width:${pct}%"></div></div>
+          <div class="usage-headroom">${headroom}</div>
+        </div>`;
+    }).join('');
   }
 
   async function load() {
@@ -248,24 +352,35 @@
       document.getElementById('stat-partner').textContent = fmt(data.subscribers.partner);
 
       document.getElementById('stat-open-reports').textContent = fmt(data.moderation.open_reports);
+      renderUsage(data.usage);
 
       const reportsList = document.getElementById('reports-list');
       if (!data.reports.length) {
         reportsList.innerHTML = '<div class="empty">No open reports. Nice and quiet.</div>';
       } else {
-        reportsList.innerHTML = data.reports.map((r) => `
-          <div class="row">
-            <div>
+        reportsList.innerHTML = data.reports.map((r) => {
+          const strikePill = r.strike_count > 0
+            ? `<span class="strike-pill">${r.strike_count} strike${r.strike_count > 1 ? 's' : ''}</span>` : '';
+          const preview = r.content_preview
+            ? `<div class="content-preview">"${r.content_preview.replace(/</g, '&lt;')}"</div>` : '';
+          const note = r.note
+            ? `<span style="color:var(--td-text-muted)"> · note: "${r.note.replace(/</g, '&lt;')}"</span>` : '';
+          return `
+          <div class="row" id="report-${r.id}" style="align-items:flex-start; padding:14px 0;">
+            <div style="flex:1; min-width:0;">
               <span class="badge">${r.target_type}</span>
-              <strong style="margin-left:8px;">${r.reason}</strong>
-              <div class="meta">reported by @${r.reporter_username} · ${timeAgo(r.created_at)}${r.note ? ' · "' + r.note.replace(/</g, '&lt;') + '"' : ''}</div>
+              <strong style="margin-left:8px;">${r.reason}</strong>${strikePill}
+              ${preview}
+              <div class="meta" style="margin-top:3px;">reported by @${r.reporter_username} · ${timeAgo(r.created_at)}${note}</div>
             </div>
-            <div class="report-actions">
-              <button class="btn btn-sm" onclick="resolveReport('${r.id}','dismissed', this)">Dismiss</button>
-              <button class="btn btn-sm btn-primary" onclick="resolveReport('${r.id}','resolved', this)">Resolve</button>
+            <div class="report-actions" style="flex-shrink:0; margin-left:12px; flex-wrap:wrap; justify-content:flex-end;">
+              <button class="btn btn-sm" onclick="noAction('${r.id}')">No action</button>
+              <button class="btn btn-sm btn-warn" onclick="warnUser('${r.id}')">Warn</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteContent('${r.id}','${r.target_type}')">Delete</button>
+              <button class="btn btn-sm btn-ban" onclick="deleteAndBan('${r.id}','${r.target_type}')">Delete + Ban</button>
             </div>
-          </div>
-        `).join('');
+          </div>`;
+        }).join('');
       }
 
       const signupsList = document.getElementById('signups-list');
@@ -279,6 +394,39 @@
     } catch (e) {
       errBanner.style.display = 'block';
       errBanner.textContent = 'Failed to load dashboard: ' + e.message;
+    }
+  }
+
+  async function sendBroadcast() {
+    const title = document.getElementById('broadcast-title').value.trim();
+    const message = document.getElementById('broadcast-body').value.trim();
+    const btn = document.getElementById('broadcast-btn');
+    const status = document.getElementById('broadcast-status');
+
+    if (!title) { status.style.color = '#E5484D'; status.textContent = 'Title is required.'; return; }
+    if (!confirm(`Send "${title}" to ALL users? This cannot be undone.`)) return;
+
+    btn.disabled = true;
+    status.style.color = 'var(--td-text-2)';
+    status.textContent = 'Sending…';
+
+    try {
+      const res = await fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': getKey() },
+        body: JSON.stringify({ action: 'broadcast', title, message }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      status.style.color = '#4FB477';
+      status.textContent = `✓ Sent to ${data.sent.toLocaleString()} users`;
+      document.getElementById('broadcast-title').value = '';
+      document.getElementById('broadcast-body').value = '';
+    } catch (e) {
+      status.style.color = '#E5484D';
+      status.textContent = 'Failed: ' + e.message;
+    } finally {
+      btn.disabled = false;
     }
   }
 

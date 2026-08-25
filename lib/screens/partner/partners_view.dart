@@ -103,11 +103,7 @@ class _PartnerCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.graphite,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.hairline),
-        ),
+        decoration: AppDecorations.glassCard(radius: 16),
         clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,7 +122,7 @@ class _PartnerCard extends StatelessWidget {
                   Text(page.businessName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.archivo(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                      style: GoogleFonts.spaceGrotesk(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.cream)),
                   if ((page.bio ?? '').trim().isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(page.bio!.trim(),
@@ -143,7 +139,7 @@ class _PartnerCard extends StatelessWidget {
     );
   }
 
-  Widget _fallback() => const DecoratedBox(
+  Widget _fallback() => DecoratedBox(
         decoration: BoxDecoration(color: AppColors.graphiteRaised),
         child: Center(child: Icon(Icons.storefront_outlined, size: 30, color: AppColors.steel)),
       );

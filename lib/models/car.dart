@@ -16,6 +16,10 @@ class Car {
     this.latitude,
     this.longitude,
     this.locationName,
+    this.followerCount = 0,
+    this.publicSlug,
+    this.shareEnabled = true,
+    this.linkVisits = 0,
   });
 
   final String id;
@@ -42,6 +46,21 @@ class Car {
   final double? longitude;
   final String? locationName;
 
+  /// Materialised count of follows — kept in sync by a DB trigger. Zero when
+  /// the column hasn't been selected (e.g. minimal fetches).
+  final int followerCount;
+
+  /// Unique slug used in the public share URL `torqueden.app/c/{slug}`.
+  /// Null until the owner shares the car for the first time.
+  final String? publicSlug;
+
+  /// When false, the public web page returns 404 and link sharing is hidden.
+  /// Image-card sharing is always available (local render only).
+  final bool shareEnabled;
+
+  /// Cumulative web page visits via the public share link.
+  final int linkVisits;
+
   factory Car.fromMap(Map<String, dynamic> map) {
     return Car(
       id: map['id'] as String,
@@ -58,10 +77,45 @@ class Car {
       latitude: (map['latitude'] as num?)?.toDouble(),
       longitude: (map['longitude'] as num?)?.toDouble(),
       locationName: map['location_name'] as String?,
+      followerCount: (map['follower_count'] as int?) ?? 0,
+      publicSlug: map['public_slug'] as String?,
+      shareEnabled: (map['share_enabled'] as bool?) ?? true,
+      linkVisits: (map['link_visits'] as int?) ?? 0,
     );
   }
 
+  Car copyWith({int? followerCount, String? publicSlug, bool? shareEnabled, int? linkVisits}) => Car(
+        id: id,
+        ownerId: ownerId,
+        make: make,
+        model: model,
+        year: year,
+        chassisModel: chassisModel,
+        nickname: nickname,
+        color: color,
+        description: description,
+        photoUrl: photoUrl,
+        latitude: latitude,
+        longitude: longitude,
+        locationName: locationName,
+        followerCount: followerCount ?? this.followerCount,
+        publicSlug: publicSlug ?? this.publicSlug,
+        shareEnabled: shareEnabled ?? this.shareEnabled,
+        linkVisits: linkVisits ?? this.linkVisits,
+      );
+
   bool get hasPhoto => photoUrl != null && photoUrl!.trim().isNotEmpty;
+
+  /// Supabase image-transform URL for display thumbnails (avoids serving full-res).
+  String? thumbnailUrl({int width = 600, int quality = 75}) {
+    if (!hasPhoto) return null;
+    final t = photoUrl!.replaceFirst(
+      '/storage/v1/object/public/',
+      '/storage/v1/render/image/public/',
+    );
+    if (t == photoUrl) return photoUrl;
+    return '$t?width=$width&quality=$quality&resize=contain';
+  }
 
   /// True when this car has usable coordinates for distance search.
   bool get hasLocation => latitude != null && longitude != null;
