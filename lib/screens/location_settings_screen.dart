@@ -111,11 +111,7 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
               // Current saved location
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.graphite,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.hairline),
-                ),
+                decoration: AppDecorations.glassCard(radius: 14),
                 child: Row(
                   children: [
                     Icon(_isSet ? Icons.location_on : Icons.location_off_outlined,
@@ -163,7 +159,7 @@ class _LocationSettingsScreenState extends State<LocationSettingsScreen> {
                 style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
                 decoration: InputDecoration(
                   hintText: 'Town, city or postcode',
-                  prefixIcon: const Icon(Icons.search, color: AppColors.steel),
+                  prefixIcon: Icon(Icons.search, color: AppColors.steel),
                   suffixIcon: TextButton(
                     onPressed: _busy ? null : _searchPlace,
                     child: Text('Search', style: GoogleFonts.inter(color: AppColors.ember, fontWeight: FontWeight.w600)),

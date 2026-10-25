@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
+import 'package:torqueden/screens/car_detail_screen.dart';
+import 'package:torqueden/screens/discover_screen.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/comments_sheet.dart';
+import 'package:torqueden/widgets/guest_nudge_sheet.dart';
+import 'package:torqueden/widgets/share_sheet.dart';
 import 'package:torqueden/widgets/post_media_view.dart';
 
 /// Fullscreen, reel-style media viewer. The clip/photo fills the screen (video
@@ -11,9 +17,27 @@ import 'package:torqueden/widgets/post_media_view.dart';
 /// comment rail bottom-right. Tapping comments slides the media up to 75% and
 /// reveals a scrollable comments panel in the bottom 25%.
 class PostViewerScreen extends StatefulWidget {
-  const PostViewerScreen({super.key, required this.media});
+  const PostViewerScreen({
+    super.key,
+    required this.media,
+    this.car,
+    this.voteCount,
+    this.isMyVote = false,
+    this.canVote = false,
+    this.onVote,
+  });
 
   final PostMedia media;
+
+  /// When supplied, a tappable car name chip appears at the top so the user
+  /// can navigate to the car profile from this view.
+  final Car? car;
+
+  /// Shot challenge vote params — only passed when opened from the challenge screen.
+  final int? voteCount;
+  final bool isMyVote;
+  final bool canVote;
+  final VoidCallback? onVote;
 
   @override
   State<PostViewerScreen> createState() => _PostViewerScreenState();
@@ -26,13 +50,15 @@ class _PostViewerScreenState extends State<PostViewerScreen> {
   bool _liked = false;
   int _likes = 0;
   int _comments = 0;
+  late int? _voteCount = widget.voteCount;
+  late bool _isMyVote = widget.isMyVote;
   bool _busy = false;
 
   String? get _entryId => widget.media.buildEntryId;
 
   // Comments take the bottom 75% when open (matching the Home comments sheet);
   // the media shifts up into the top 25%.
-  static const double _commentsFraction = 0.75;
+  static const double _commentsFraction = 0.50;
 
   @override
   void initState() {
@@ -64,6 +90,7 @@ class _PostViewerScreenState extends State<PostViewerScreen> {
     final uid = _client.auth.currentUser?.id;
     if (uid == null || _busy || _entryId == null) return;
     final wasLiked = _liked;
+    HapticFeedback.lightImpact();
     setState(() {
       _busy = true;
       _liked = !wasLiked;
@@ -92,6 +119,24 @@ class _PostViewerScreenState extends State<PostViewerScreen> {
         _busy = false;
       });
     }
+  }
+
+  void _handleVote() {
+    if (!widget.canVote) {
+      showGuestNudge(context, reason: 'vote on challenge entries');
+      return;
+    }
+    if (widget.onVote == null) return;
+    setState(() {
+      if (_isMyVote) {
+        _isMyVote = false;
+        _voteCount = (_voteCount ?? 1) - 1;
+      } else {
+        _isMyVote = true;
+        _voteCount = (_voteCount ?? 0) + 1;
+      }
+    });
+    widget.onVote!();
   }
 
   void _toggleComments() {
@@ -170,39 +215,148 @@ class _PostViewerScreenState extends State<PostViewerScreen> {
             ),
           ),
         ),
-        // Back — bottom-left.
+        // Back — top-left, safe-area aware.
         Positioned(
           left: 12,
-          bottom: 20,
+          top: MediaQuery.of(context).padding.top + 8,
           child: _CircleButton(
             icon: Icons.arrow_back,
             onTap: () => Navigator.of(context).pop(),
           ),
         ),
-        // Like + comment rail — raised into the lower-third on the right
-        // (a fraction of the media height so it holds in both open/closed).
-        if (_entryId != null)
+        // Car link + caption + hashtags — bottom-left, leaving the right rail clear.
+        if (widget.car != null ||
+            (widget.media.caption?.isNotEmpty ?? false) ||
+            widget.media.tags.isNotEmpty)
           Positioned(
+            left: 14,
+            right: 80,
+            bottom: MediaQuery.of(context).padding.bottom + 20,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.car != null) ...[
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => CarDetailScreen(car: widget.car!),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          widget.car!.title,
+                          style: GoogleFonts.spaceGrotesk(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            shadows: const [
+                              Shadow(color: Colors.black54, blurRadius: 8),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(Icons.chevron_right,
+                            size: 16,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(color: Colors.black54, blurRadius: 8),
+                            ]),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                if (widget.media.caption?.isNotEmpty ?? false)
+                  Text(
+                    widget.media.caption!,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                      shadows: const [
+                        Shadow(color: Colors.black54, blurRadius: 8),
+                      ],
+                    ),
+                  ),
+                if (widget.media.tags.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 4,
+                    children: [
+                      for (final tag in widget.media.tags)
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  DiscoverScreen(initialQuery: '#$tag'),
+                            ),
+                          ),
+                          child: Text(
+                            '#$tag',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ember,
+                              shadows: const [
+                                Shadow(color: Colors.black54, blurRadius: 8),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        // Like + comment rail — bottom-right corner, safe-area aware.
+        Positioned(
             right: 12,
-            bottom: mediaHeight * 0.25,
+            bottom: MediaQuery.of(context).padding.bottom + 20,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (_voteCount != null) ...[
+                  _RailButton(
+                    icon: _isMyVote
+                        ? Icons.arrow_upward
+                        : Icons.arrow_upward_outlined,
+                    color: _isMyVote ? AppColors.ember : AppColors.cream,
+                    label: '$_voteCount',
+                    onTap: _handleVote,
+                  ),
+                  const SizedBox(height: 18),
+                ],
                 _RailButton(
                   icon: _liked
                       ? Icons.local_fire_department
                       : Icons.local_fire_department_outlined,
-                  color: _liked ? AppColors.ember : Colors.white,
+                  color: _liked ? AppColors.ember : AppColors.cream,
                   label: '$_likes',
-                  onTap: _toggleLike,
+                  onTap: _entryId != null ? _toggleLike : null,
                 ),
                 const SizedBox(height: 18),
                 _RailButton(
                   icon: Icons.mode_comment_outlined,
-                  color: Colors.white,
+                  color: AppColors.cream,
                   label: '$_comments',
-                  onTap: _toggleComments,
+                  onTap: _entryId != null ? _toggleComments : null,
                 ),
+                if (widget.car != null) ...[
+                  const SizedBox(height: 18),
+                  _RailButton(
+                    icon: Icons.ios_share_outlined,
+                    color: AppColors.cream,
+                    label: 'Share',
+                    onTap: () => showShareSheet(context, car: widget.car!),
+                  ),
+                ],
               ],
             ),
           ),
@@ -212,7 +366,7 @@ class _PostViewerScreenState extends State<PostViewerScreen> {
 
   Widget _commentsPanel() {
     return DecoratedBox(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.graphite,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 16)],
@@ -239,7 +393,7 @@ class _CircleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.black.withValues(alpha: 0.45),
+      color: Colors.white.withValues(alpha: 0.20),
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
@@ -264,7 +418,7 @@ class _RailButton extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String label;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {

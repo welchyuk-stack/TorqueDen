@@ -183,7 +183,7 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
                 controller: _address,
                 maxLines: 3,
                 textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Business address',
                   hintText: 'Unit / street, town, postcode',
                   prefixIcon: Icon(Icons.location_on_outlined, color: AppColors.steel),
@@ -198,7 +198,7 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
                   if (s.isEmpty) return null; // optional
                   return (s.contains('@') && s.contains('.')) ? null : 'Enter a valid email';
                 },
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Contact email',
                   hintText: 'hello@yourshop.co.uk',
                   prefixIcon: Icon(Icons.mail_outline, color: AppColors.steel),
@@ -208,7 +208,7 @@ class _EditPartnerPageScreenState extends State<EditPartnerPageScreen> {
               TextFormField(
                 controller: _website,
                 keyboardType: TextInputType.url,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Website',
                   hintText: 'yourshop.co.uk',
                   prefixIcon: Icon(Icons.link, color: AppColors.steel),
@@ -236,11 +236,8 @@ class _BannerHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: AppColors.graphiteRaised,
-        border: Border.all(color: AppColors.hairline),
-      ),
-      child: const Column(
+      decoration: AppDecorations.glassCard(radius: 0),
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.image_outlined, size: 34, color: AppColors.steel),
@@ -263,7 +260,7 @@ class _Badge extends StatelessWidget {
         color: Colors.black.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(text, style: const TextStyle(color: AppColors.cream, fontSize: 12, fontWeight: FontWeight.w600)),
+      child: Text(text, style: TextStyle(color: AppColors.cream, fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 }

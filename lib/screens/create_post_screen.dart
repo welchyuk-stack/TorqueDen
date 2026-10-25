@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/features.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/screens/add_car_screen.dart';
+import 'package:torqueden/utils/image_compress.dart';
 import 'package:torqueden/screens/camera_screen.dart';
 import 'package:torqueden/screens/video_trim_screen.dart';
 import 'package:torqueden/services/review_service.dart';
@@ -21,8 +22,14 @@ import 'package:torqueden/widgets/empty_state.dart';
 /// A post is photos and/or short clips with a caption, attached to one of your
 /// cars. It's saved as a (non-silent) build entry so it also lands on
 /// followers' feeds. Pops `true` once a post is published.
+///
+/// Pass [challengeTag] to pre-fill and lock the challenge hashtag so the post
+/// automatically counts as a challenge entry.
 class CreatePostScreen extends StatefulWidget {
-  const CreatePostScreen({super.key});
+  const CreatePostScreen({super.key, this.challengeTag});
+
+  /// When set, this tag is pre-filled and locked in the tags field.
+  final String? challengeTag;
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -31,6 +38,8 @@ class CreatePostScreen extends StatefulWidget {
 class _CreatePostScreenState extends State<CreatePostScreen> {
   final _client = Supabase.instance.client;
   final _caption = TextEditingController();
+  final _tags = TextEditingController();
+  final _location = TextEditingController();
 
   static const _videoExts = {'mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v'};
   final List<({String name, Uint8List bytes, bool isVideo})> _media = [];
@@ -43,15 +52,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   List<({String id, String label})> _mods = const [];
   String? _selectedModId;
 
+  bool get _hasLockedTag => widget.challengeTag != null;
+
   @override
   void initState() {
     super.initState();
     _carsFuture = _loadCars();
+    if (widget.challengeTag != null) {
+      _tags.text = widget.challengeTag!;
+    }
   }
 
   @override
   void dispose() {
     _caption.dispose();
+    _tags.dispose();
+    _location.dispose();
     super.dispose();
   }
 
@@ -222,7 +238,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         final vext = path.contains('.') ? path.split('.').last.toLowerCase() : ext;
         added.add((name: 'clip.$vext', bytes: await File(path).readAsBytes(), isVideo: true));
       } else {
-        added.add((name: f.name, bytes: await f.readAsBytes(), isVideo: false));
+        final raw = await f.readAsBytes();
+        added.add((name: f.name, bytes: await compressImageBytes(raw), isVideo: false));
       }
     }
     if (!mounted) return;
@@ -246,14 +263,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         ? caption
         : 'Posted ${_media.length} ${_media.length == 1 ? 'item' : 'items'}';
 
+    final parsedTags = _tags.text
+        .toLowerCase()
+        .split(RegExp(r'[\s,]+'))
+        .map((t) => t.replaceAll('#', '').trim())
+        .where((t) => t.isNotEmpty)
+        .toSet()
+        .toList();
+
     setState(() => _posting = true);
     try {
       // 1. The build entry carrying the caption (non-silent → hits feeds).
+      final loc = _location.text.trim();
       final inserted = await _client.from('build_entries').insert({
         'car_id': car.id,
         'title': title,
         'silent': false,
         'linked_build_entry_id': _selectedModId,
+        if (loc.isNotEmpty) 'location_name': loc,
+        if (parsedTags.isNotEmpty) 'tags': parsedTags,
       }).select();
       final entryId = inserted.first['id'] as String;
 
@@ -335,6 +363,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             ),
           ),
         ],
+        bottom: _posting
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(3),
+                child: LinearProgressIndicator(
+                  backgroundColor: Colors.transparent,
+                  color: AppColors.ember,
+                ),
+              )
+            : null,
       ),
       body: SafeArea(
         child: FutureBuilder<List<Car>>(
@@ -369,12 +406,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               );
             }
 
-            return Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 520),
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
+            return SingleChildScrollView(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+
+                    // ── Media ─────────────────────────────────────────
                     _MediaPicker(
                       media: _media,
                       onAdd: _posting ? null : _pickSource,
@@ -383,56 +425,137 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           : (i) => setState(() => _media.removeAt(i)),
                       onEdit: _posting ? null : _editMedia,
                     ),
-                    const SizedBox(height: 18),
-                    TextField(
-                      controller: _caption,
-                      onChanged: (_) => setState(() {}), // refresh Post enabled
-                      textCapitalization: TextCapitalization.sentences,
-                      maxLines: 6,
-                      minLines: 3,
-                      style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
-                      decoration: const InputDecoration(
-                        labelText: 'Caption',
-                        hintText: 'Say something… (a text-only post is fine)',
+
+                    const SizedBox(height: 14),
+
+                    // ── Caption ───────────────────────────────────────
+                    Container(
+                      decoration: AppDecorations.glassCard(radius: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      child: TextField(
+                        controller: _caption,
+                        onChanged: (_) => setState(() {}),
+                        textCapitalization: TextCapitalization.sentences,
+                        maxLines: 6,
+                        minLines: 3,
+                        style: GoogleFonts.inter(
+                            color: AppColors.cream, fontSize: 15, height: 1.5),
+                        decoration: InputDecoration(
+                          hintText: 'Add a caption…',
+                          hintStyle: GoogleFonts.inter(
+                              color: AppColors.textMuted, fontSize: 15),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 18),
-                    _CarSelector(
-                      cars: cars,
-                      selected: _selectedCar,
-                      onChanged: _posting ? null : _onCarChanged,
+
+                    const SizedBox(height: 12),
+
+                    // ── Hashtags ──────────────────────────────────────
+                    if (_hasLockedTag) ...[
+                      // Challenge tag — locked chip, can't be removed.
+                      Container(
+                        decoration: AppDecorations.glassCard(radius: 16),
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: AppColors.ember.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: AppColors.ember.withValues(alpha: 0.4)),
+                              ),
+                              child: Text(
+                                '#${widget.challengeTag}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.ember,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Challenge entry',
+                              style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else
+                    Container(
+                      decoration: AppDecorations.glassCard(radius: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      child: TextField(
+                        controller: _tags,
+                        enabled: !_posting,
+                        textCapitalization: TextCapitalization.none,
+                        style: GoogleFonts.inter(
+                            color: AppColors.cream, fontSize: 15, height: 1.5),
+                        decoration: InputDecoration(
+                          hintText: '#jdm #stance #turbo',
+                          hintStyle: GoogleFonts.inter(
+                              color: AppColors.textMuted, fontSize: 15),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                        ),
+                      ),
                     ),
-                    if (_mods.isNotEmpty) ...[
-                      const SizedBox(height: 14),
-                      _ModSelector(
-                        mods: _mods,
-                        selectedId: _selectedModId,
-                        onChanged: _posting
-                            ? null
-                            : (id) => setState(() => _selectedModId = id),
+
+                    const SizedBox(height: 12),
+
+                    // ── Car + optional mod ────────────────────────────
+                    Container(
+                      decoration: AppDecorations.glassCard(radius: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 4),
+                      child: Column(
+                        children: [
+                          _CarSelector(
+                            cars: cars,
+                            selected: _selectedCar,
+                            onChanged: _posting ? null : _onCarChanged,
+                          ),
+                          if (_mods.isNotEmpty) ...[
+                            Divider(height: 1, color: AppColors.hairline),
+                            _ModSelector(
+                              mods: _mods,
+                              selectedId: _selectedModId,
+                              onChanged: _posting
+                                  ? null
+                                  : (id) => setState(
+                                      () => _selectedModId = id),
+                            ),
+                          ],
+                          Divider(height: 1, color: AppColors.hairline),
+                          _LocationField(
+                            controller: _location,
+                            enabled: !_posting,
+                          ),
+                        ],
                       ),
-                    ],
-                    const SizedBox(height: 24),
-                    if (_posting)
-                      const Center(
-                        child: CircularProgressIndicator(color: AppColors.ember),
-                      )
-                    else
-                      FilledButton.icon(
-                        onPressed: _canPost ? _post : null,
-                        icon: const Icon(Icons.local_fire_department, size: 20),
-                        label: const Text('Post'),
-                      ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Your post appears on the car\'s profile and on your followers\' feeds.',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppColors.textMuted,
-                        height: 1.4,
+                    ),
+
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        'Your post appears on the car\'s profile and your followers\' feeds.',
+                        style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                            height: 1.4),
                       ),
                     ),
                   ],
+                    ),
+                  ),
                 ),
               ),
             );
@@ -463,21 +586,18 @@ class _MediaPicker extends StatelessWidget {
       return AspectRatio(
         aspectRatio: 16 / 10,
         child: Material(
-          color: AppColors.graphiteRaised,
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onAdd,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.hairline),
-              ),
-              child: const Column(
+            child: Container(
+              decoration: AppDecorations.glassCard(radius: 14),
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.add_photo_alternate_outlined, size: 40, color: AppColors.steel),
-                  SizedBox(height: 10),
+                  const SizedBox(height: 10),
                   Text('Add photos or clips',
                       style: TextStyle(color: AppColors.textSecondary, fontSize: 15)),
                 ],
@@ -523,12 +643,8 @@ class _AddTile extends StatelessWidget {
       child: Container(
         width: 108,
         height: 108,
-        decoration: BoxDecoration(
-          color: AppColors.graphiteRaised,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.hairline),
-        ),
-        child: const Icon(Icons.add, color: AppColors.steel, size: 30),
+        decoration: AppDecorations.glassCard(radius: 12),
+        child: Icon(Icons.add, color: AppColors.steel, size: 30),
       ),
     );
   }
@@ -570,7 +686,7 @@ class _Thumb extends StatelessWidget {
             child: GestureDetector(
               onTap: onEdit,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(999),
@@ -581,7 +697,7 @@ class _Thumb extends StatelessWidget {
                     Icon(isVideo ? Icons.content_cut : Icons.tune, size: 13, color: AppColors.cream),
                     const SizedBox(width: 4),
                     Text(isVideo ? 'Trim' : 'Edit',
-                        style: const TextStyle(color: AppColors.cream, fontSize: 11)),
+                        style: TextStyle(color: AppColors.cream, fontSize: 11)),
                   ],
                 ),
               ),
@@ -589,17 +705,21 @@ class _Thumb extends StatelessWidget {
           ),
         if (onRemove != null)
           Positioned(
-            top: 4,
-            right: 4,
+            top: 0,
+            right: 0,
             child: GestureDetector(
               onTap: onRemove,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  shape: BoxShape.circle,
+              behavior: HitTestBehavior.opaque,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(Icons.close, size: 16, color: AppColors.cream),
                 ),
-                child: const Icon(Icons.close, size: 16, color: AppColors.cream),
               ),
             ),
           ),
@@ -658,7 +778,7 @@ class _VideoThumbState extends State<_VideoThumb> {
       height: widget.size,
       color: AppColors.graphiteRaised,
       alignment: Alignment.center,
-      child: const Icon(Icons.videocam, color: AppColors.steel, size: 30),
+      child: Icon(Icons.videocam, color: AppColors.steel, size: 30),
     );
   }
 }
@@ -680,7 +800,15 @@ class _CarSelector extends StatelessWidget {
     return DropdownButtonFormField<Car>(
       initialValue: selected,
       isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Post to'),
+      decoration: InputDecoration(
+        labelText: 'Post to',
+        labelStyle: GoogleFonts.inter(color: AppColors.steel, fontSize: 13),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        prefixIcon: Icon(Icons.directions_car_outlined,
+            color: AppColors.steel, size: 20),
+      ),
       dropdownColor: AppColors.graphiteRaised,
       style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
       iconEnabledColor: AppColors.steel,
@@ -689,6 +817,36 @@ class _CarSelector extends StatelessWidget {
           DropdownMenuItem(value: c, child: Text(c.title)),
       ],
       onChanged: onChanged,
+    );
+  }
+}
+
+/// Optional free-text location tag, e.g. "Nürburgring" or "Manchester, UK".
+class _LocationField extends StatelessWidget {
+  const _LocationField({required this.controller, required this.enabled});
+  final TextEditingController controller;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      enabled: enabled,
+      textCapitalization: TextCapitalization.words,
+      maxLength: 100,
+      style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+      decoration: InputDecoration(
+        labelText: 'Location (optional)',
+        labelStyle: GoogleFonts.inter(color: AppColors.steel, fontSize: 13),
+        hintText: 'e.g. Nürburgring',
+        hintStyle: GoogleFonts.inter(color: AppColors.textMuted, fontSize: 15),
+        prefixIcon: Icon(Icons.location_on_outlined, color: AppColors.steel, size: 20),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        counterText: '',
+        contentPadding: const EdgeInsets.symmetric(vertical: 14),
+      ),
     );
   }
 }
@@ -710,9 +868,13 @@ class _ModSelector extends StatelessWidget {
     return DropdownButtonFormField<String?>(
       initialValue: selectedId,
       isExpanded: true,
-      decoration: const InputDecoration(
+      decoration: InputDecoration(
         labelText: 'Link to a mod (optional)',
+        labelStyle: GoogleFonts.inter(color: AppColors.steel, fontSize: 13),
         prefixIcon: Icon(Icons.build_outlined, color: AppColors.steel, size: 20),
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
       ),
       dropdownColor: AppColors.graphiteRaised,
       style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),

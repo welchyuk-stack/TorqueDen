@@ -24,7 +24,7 @@ Future<void> showUpgradeSheet(BuildContext context, {required String title, requ
             const SizedBox(height: 18),
             Text(title,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.archivo(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                style: GoogleFonts.spaceGrotesk(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.cream)),
             const SizedBox(height: 10),
             Text(message,
                 textAlign: TextAlign.center,

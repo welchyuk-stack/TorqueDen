@@ -23,8 +23,8 @@ class MembershipScreen extends StatelessWidget {
               current: true,
               features: [
                 'Unlimited cars in your garage',
-                'Create unlimited clubs — public or private',
-                'Full feed, clubs & Discover',
+                'Create unlimited forums — public or private',
+                'Full feed, forums & Discover',
                 'Supported by ads',
               ],
             ),
@@ -67,11 +67,11 @@ class _TierCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.graphite,
-        borderRadius: BorderRadius.circular(18),
+      decoration: AppDecorations.glassCard(radius: 18).copyWith(
         border: Border.all(
-          color: current ? AppColors.ember : AppColors.hairline,
+          color: current
+              ? AppColors.ember
+              : AppColors.cream.withValues(alpha: 0.10),
           width: current ? 1.5 : 1,
         ),
       ),
@@ -86,7 +86,7 @@ class _TierCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(name,
-                        style: GoogleFonts.archivo(
+                        style: GoogleFonts.spaceGrotesk(
                             fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.cream)),
                     const SizedBox(height: 2),
                     Text(tagline, style: GoogleFonts.inter(fontSize: 13, color: AppColors.textMuted)),
@@ -101,7 +101,7 @@ class _TierCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           Text(price,
-              style: GoogleFonts.archivo(
+              style: GoogleFonts.spaceGrotesk(
                   fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.cream)),
           const SizedBox(height: 14),
           for (final f in features)

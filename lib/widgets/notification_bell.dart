@@ -37,7 +37,7 @@ class _NotificationBellState extends State<NotificationBell> {
           alignment: Alignment.center,
           children: [
             IconButton(
-              icon: const Icon(Icons.notifications_none, color: AppColors.steel, size: 25.2),
+              icon: Icon(Icons.notifications_none, color: AppColors.cream, size: 30),
               tooltip: 'Notifications',
               onPressed: _open,
             ),

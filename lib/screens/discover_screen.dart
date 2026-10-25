@@ -1,21 +1,34 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:torqueden/ads/ad_ids.dart';
+import 'package:torqueden/ads/consent_service.dart';
 import 'package:torqueden/models/car.dart';
+import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/screens/car_detail_screen.dart';
 import 'package:torqueden/screens/location_settings_screen.dart';
+import 'package:torqueden/screens/post_viewer_screen.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/services/saved_location.dart';
 import 'package:torqueden/services/units_pref.dart';
 import 'package:torqueden/theme.dart';
 import 'package:torqueden/widgets/empty_state.dart';
-import 'package:torqueden/widgets/settings_button.dart';
+import 'package:torqueden/models/challenge.dart';
+import 'package:torqueden/screens/challenge_screen.dart';
+import 'package:torqueden/services/challenge_service.dart';
 
 /// Discover tab — a dense Instagram-explore-style grid of everyone else's cars.
-/// Tap a tile to open the full profile (and follow from there). A search box
-/// filters by make / model / nickname.
+/// Tap a tile to open the full profile (and follow from there), or a post tile
+/// to open that post. A plain-text search matches both cars (make / model /
+/// nickname / chassis / tags) and posts (title / body / tags), merged into one
+/// grid. A "#tag" search returns posts only.
 class DiscoverScreen extends StatefulWidget {
-  const DiscoverScreen({super.key});
+  const DiscoverScreen({super.key, this.initialQuery});
+
+  /// Pre-fill the search box, e.g. when navigating from a hashtag chip.
+  final String? initialQuery;
 
   @override
   State<DiscoverScreen> createState() => _DiscoverScreenState();
@@ -26,8 +39,12 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   final _searchController = TextEditingController();
 
   late Future<List<Car>> _future;
-  late Future<List<String>> _suggestionsFuture;
   String _query = '';
+  List<String> _trendingTags = [];
+  // carId → all tags across that car's posts
+  Map<String, List<String>> _carTags = {};
+  // All public posts, loaded alongside cars so text search can match both.
+  List<_PostHit> _posts = [];
 
   // Location search ("near me") state. The centre comes from the location the
   // user set in Settings (SavedLocation), not a live GPS grab.
@@ -43,8 +60,11 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.initialQuery != null) {
+      _searchController.text = widget.initialQuery!;
+      _query = widget.initialQuery!;
+    }
     _future = _load();
-    _suggestionsFuture = _loadSuggestions();
     _applySavedLocation();
     _searchController.addListener(() {
       final q = _searchController.text.trim();
@@ -65,15 +85,108 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
   }
 
   Future<List<Car>> _load() async {
-    final uid = _client.auth.currentUser?.id;
     await Moderation.refreshBlocks();
-    var q = _client.from('cars').select();
-    if (uid != null) q = q.neq('owner_id', uid);
-    final rows = await q.order('created_at', ascending: false);
-    return rows
+    final rows = await _client
+        .from('cars')
+        .select('*, follower_count')
+        .order('created_at', ascending: false)
+        .limit(200);
+    final cars = rows
         .map(Car.fromMap)
         .where((c) => !Moderation.isBlocked(c.ownerId))
         .toList();
+
+    // Load tags from posts for the cars we just fetched.
+    final carIds = cars.map((c) => c.id).toList();
+    if (carIds.isNotEmpty) {
+      final tagRows = await _client
+          .from('build_entries')
+          .select('car_id, tags')
+          .inFilter('car_id', carIds)
+          .not('tags', 'eq', '{}');
+      final map = <String, List<String>>{};
+      for (final r in tagRows) {
+        final id = r['car_id'] as String;
+        final tags = (r['tags'] as List<dynamic>).cast<String>();
+        map.update(id, (existing) => [...existing, ...tags],
+            ifAbsent: () => [...tags]);
+      }
+      _carTags = map;
+    } else {
+      _carTags = {};
+    }
+
+    await _loadPosts();
+    _computeTrending();
+    return cars;
+  }
+
+  /// Loads public posts (build entries) with their car and first photo, so
+  /// search can match post title/body/tags alongside car fields.
+  Future<void> _loadPosts() async {
+    final rows = await _client
+        .from('build_entries')
+        .select(
+          'id, title, body, tags, '
+          'car:cars(id, owner_id, make, model, nickname, chassis_model, photo_url), '
+          'post_media!inner(id, url, kind, position)',
+        )
+        .eq('silent', false)
+        .order('created_at', ascending: false)
+        .limit(200);
+
+    final posts = <_PostHit>[];
+    for (final row in rows) {
+      final carMap = row['car'] as Map<String, dynamic>?;
+      if (carMap == null) continue;
+      if (Moderation.isBlocked(carMap['owner_id'] as String?)) continue;
+
+      final mediaRows = ((row['post_media'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .toList()
+        ..sort(
+          (a, b) =>
+              ((a['position'] as int?) ?? 0).compareTo((b['position'] as int?) ?? 0),
+        );
+
+      posts.add(
+        _PostHit(
+          id: row['id'] as String,
+          title: row['title'] as String? ?? '',
+          body: row['body'] as String?,
+          tags: (row['tags'] as List<dynamic>?)?.cast<String>() ?? const [],
+          car: Car.fromMap(carMap),
+          media: mediaRows.isEmpty
+              ? null
+              : PostMedia(
+                  id: mediaRows.first['id'] as String,
+                  url: mediaRows.first['url'] as String,
+                  kind: (mediaRows.first['kind'] as String?) ?? 'image',
+                  position: (mediaRows.first['position'] as int?) ?? 0,
+                  buildEntryId: row['id'] as String,
+                  caption: row['title'] as String?,
+                  tags: (row['tags'] as List<dynamic>?)?.cast<String>() ?? const [],
+                ),
+        ),
+      );
+    }
+    _posts = posts;
+  }
+
+  void _computeTrending() {
+    final counts = <String, int>{};
+    for (final tags in _carTags.values) {
+      for (final tag in tags) {
+        counts[tag] = (counts[tag] ?? 0) + 1;
+      }
+    }
+    final sorted = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    if (mounted) {
+      setState(() {
+        _trendingTags = sorted.take(5).map((e) => e.key).toList();
+      });
+    }
   }
 
   Future<void> _refresh() async {
@@ -84,14 +197,25 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     await future;
   }
 
+  /// A "#tag" query searches posts only — cars never match a hashtag search.
+  bool get _isHashtagQuery => _query.trim().startsWith('#');
+
+  /// Search text with any leading # stripped, so "#jdm" and "jdm" match the
+  /// same posts/tags.
+  String get _needle =>
+      _query.toLowerCase().replaceFirst(RegExp(r'^#'), '').trim();
+
   List<Car> _textFilter(List<Car> cars) {
     if (_query.isEmpty) return cars;
-    final needle = _query.toLowerCase();
+    if (_isHashtagQuery) return const []; // hashtag searches return posts only
+    final needle = _needle;
     return cars.where((car) {
       final hay = [
         car.make,
         car.model,
         if (car.nickname != null) car.nickname!,
+        if (car.chassisModel != null) car.chassisModel!,
+        ...(_carTags[car.id] ?? const []),
       ].join(' ').toLowerCase();
       return hay.contains(needle);
     }).toList();
@@ -112,6 +236,51 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     }
     scored.sort((a, b) => a.distanceKm!.compareTo(b.distanceKm!));
     return scored;
+  }
+
+  /// Posts matching the current query by title, body, tags, or the owning
+  /// car's make/model/nickname/chassis. Empty when there's no query — posts
+  /// only ever show up as search results, not in the default browse grid.
+  List<_PostHit> _filteredPosts() {
+    if (_query.isEmpty) return const [];
+    final needle = _needle;
+    return _posts.where((p) {
+      final hay = [
+        p.title,
+        if (p.body != null) p.body!,
+        ...p.tags,
+        p.car.make,
+        p.car.model,
+        if (p.car.nickname != null) p.car.nickname!,
+        if (p.car.chassisModel != null) p.car.chassisModel!,
+      ].join(' ').toLowerCase();
+      return hay.contains(needle);
+    }).toList();
+  }
+
+  /// The merged grid contents for the current query:
+  /// - Hashtag search ("#tag") → posts only.
+  /// - Plain text search → matching cars + matching posts together.
+  /// - No search (browsing) → cars only, exactly as before.
+  /// "Near me" only ever filters cars (posts have no location of their own),
+  /// so posts are left out while it's on to avoid mixing filtered/unfiltered
+  /// results in the same grid.
+  List<_DiscoverItem> _visibleItems(List<Car> cars) {
+    if (_isHashtagQuery) {
+      return [for (final p in _filteredPosts()) _DiscoverItem.forPost(p)];
+    }
+    final items = <_DiscoverItem>[];
+    var carCount = 0;
+    for (final sc in _visibleCars(cars)) {
+      items.add(_DiscoverItem.forCar(sc.car, sc.distanceKm));
+      carCount++;
+      // One ad tile after every 10th car, same size as the car tiles.
+      if (carCount % 10 == 0) items.add(const _DiscoverItem.forAd());
+    }
+    if (_query.isNotEmpty && !_nearMe) {
+      items.addAll([for (final p in _filteredPosts()) _DiscoverItem.forPost(p)]);
+    }
+    return items;
   }
 
   /// Turns "near me" on/off. Turning it on needs a saved location — if none is
@@ -150,119 +319,85 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     ).push(MaterialPageRoute(builder: (_) => CarDetailScreen(car: car)));
   }
 
-  /// Phase-1 search suggestions: frequency-ranked makes and models drawn from
-  /// the cars you follow and your own garage. No history logging or ML; purely
-  /// derived from data we already have. Returns [] when there's nothing to go on
-  /// (e.g. a brand-new user), which hides the bar.
-  Future<List<String>> _loadSuggestions() async {
-    final uid = _client.auth.currentUser?.id;
-    if (uid == null) return const [];
-    try {
-      // Cars you follow + your own garage.
-      final followRows = await _client
-          .from('follows')
-          .select('car_id')
-          .eq('follower_id', uid);
-      final followedIds = [for (final r in followRows) r['car_id'] as String];
-
-      final carRows = <Map<String, dynamic>>[];
-      if (followedIds.isNotEmpty) {
-        carRows.addAll(
-          List<Map<String, dynamic>>.from(
-            await _client.from('cars').select('make, model').inFilter('id', followedIds),
-          ),
-        );
-      }
-      carRows.addAll(
-        List<Map<String, dynamic>>.from(
-          await _client.from('cars').select('make, model').eq('owner_id', uid),
-        ),
-      );
-
-      // Tally makes + models, case-insensitively, keeping first-seen spelling.
-      final counts = <String, int>{};
-      final display = <String, String>{};
-      void bump(String? raw) {
-        final t = raw?.trim() ?? '';
-        if (t.isEmpty) return;
-        final key = t.toLowerCase();
-        counts[key] = (counts[key] ?? 0) + 1;
-        display.putIfAbsent(key, () => t);
-      }
-
-      for (final c in carRows) {
-        bump(c['make'] as String?);
-        bump(c['model'] as String?);
-      }
-
-      final keys = counts.keys.toList()
-        ..sort((a, b) {
-          final byCount = counts[b]!.compareTo(counts[a]!);
-          return byCount != 0 ? byCount : a.compareTo(b);
-        });
-      return [for (final k in keys.take(8)) display[k]!];
-    } catch (_) {
-      return const []; // suggestions are best-effort — never block Discover
-    }
-  }
-
-  /// Run a suggested keyword as a search.
-  void _applySuggestion(String keyword) {
-    _searchController.text = keyword;
-    _searchController.selection = TextSelection.collapsed(
-      offset: keyword.length,
-    );
-    setState(() => _query = keyword);
+  Future<void> _openPost(_PostHit post) async {
+    final media = post.media;
+    if (media == null) return; // no photo/video to show — nothing to open
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PostViewerScreen(media: media, car: post.car),
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: widget.initialQuery != null
+          ? AppColors.carbon
+          : Colors.transparent,
       appBar: AppBar(
         title: const Padding(
           padding: EdgeInsets.only(left: 6),
           child: Text('Discover', style: TextStyle(fontSize: 22)),
         ),
-        actions: const [SettingsButton()],
+        actions: const [],
       ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-              child: TextField(
-                controller: _searchController,
-                textInputAction: TextInputAction.search,
-                style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
-                cursorColor: AppColors.ember,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: AppColors.graphiteRaised,
-                  hintText: 'Search cars, builds…',
-                  prefixIcon: const Icon(Icons.search, color: AppColors.steel),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(color: AppColors.hairline),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: const BorderSide(
-                      color: AppColors.ember,
-                      width: 1.5,
+      body: FutureBuilder<List<Car>>(
+          future: _future,
+          builder: (context, snapshot) {
+            final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+            // Build the header slivers regardless of load state.
+            final searchSliver = SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: TextField(
+                  controller: _searchController,
+                  textInputAction: TextInputAction.search,
+                  style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                  cursorColor: AppColors.ember,
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: AppColors.graphiteRaised,
+                    hintText: 'Search make, model, chassis, tags',
+                    prefixIcon: Icon(Icons.search, color: AppColors.steel),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 14,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: AppColors.hairline),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: AppColors.ember, width: 1.5),
                     ),
                   ),
                 ),
               ),
-            ),
-            _SuggestionsBar(
-              future: _suggestionsFuture,
-              onTap: _applySuggestion,
-            ),
-            _LocationBar(
+            );
+
+            final trendingSliver = _trendingTags.isNotEmpty
+                ? SliverToBoxAdapter(
+                    child: _TrendingBar(
+                      tags: _trendingTags,
+                      activeTag: _query.replaceFirst(RegExp(r'^#'), ''),
+                      onTap: (tag) {
+                        final current = _searchController.text
+                            .trim()
+                            .replaceFirst(RegExp(r'^#'), '');
+                        if (current == tag) {
+                          _searchController.clear();
+                        } else {
+                          _searchController.text = '#$tag';
+                          _searchController.selection = TextSelection.collapsed(
+                            offset: _searchController.text.length,
+                          );
+                        }
+                      },
+                    ),
+                  )
+                : null;
+
+            final locationSliver = SliverToBoxAdapter(
+              child: _LocationBar(
                 nearMe: _nearMe,
                 centerLabel: _centerLabel,
                 radiusKm: _radiusKm,
@@ -271,209 +406,166 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
                 onToggle: _toggleNearMe,
                 onChangeLocation: _openLocationSettings,
                 onRadiusChanged: (v) => setState(() => _radiusKm = v),
+                onShowdownTap: () async {
+                  final svc = ChallengeService.instance;
+                  final c = await svc.fetchActive() ??
+                      (await svc.fetchAll()).firstOrNull;
+                  if (c != null && mounted) {
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => ChallengeScreen(challenge: c),
+                    ));
+                  }
+                },
               ),
-            Expanded(
-              child: FutureBuilder<List<Car>>(
-                      future: _future,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                              color: AppColors.ember,
-                            ),
-                          );
-                        }
-                        if (snapshot.hasError) {
-                          return RefreshIndicator(
-                            color: AppColors.ember,
-                            backgroundColor: AppColors.graphite,
-                            onRefresh: _refresh,
-                            child: ListView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              children: [
-                                SizedBox(
-                                  height:
-                                      MediaQuery.sizeOf(context).height * 0.7,
-                                  child: EmptyState(
-                                    icon: Icons.error_outline,
-                                    title: 'Could not load Discover',
-                                    message: '${snapshot.error}',
-                                    action: FilledButton(
-                                      onPressed: _refresh,
-                                      child: const Text('Try again'),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }
+            );
 
-                        final cars = snapshot.data ?? const <Car>[];
-                        if (cars.isEmpty) {
-                          return const EmptyState(
-                            icon: Icons.travel_explore_outlined,
-                            title: 'No cars to discover yet',
-                            message:
-                                'When other people add cars, they\'ll show up here to follow.',
-                          );
-                        }
+            // Loading state
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return CustomScrollView(slivers: [
+                searchSliver,
+                if (trendingSliver != null) trendingSliver,
+                locationSliver,
+                const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator(color: AppColors.ember)),
+                ),
+              ]);
+            }
 
-                        final visible = _visibleCars(cars);
-                        if (visible.isEmpty) {
-                          final msg = _nearMe
-                              ? 'No cars within ${UnitsPref.radiusLabel(_radiusKm)}'
-                              : 'No matches';
-                          return Center(
-                            child: Text(
-                              msg,
-                              style: GoogleFonts.inter(
-                                fontSize: 15,
-                                color: AppColors.textMuted,
-                              ),
-                            ),
-                          );
-                        }
+            // Error state
+            if (snapshot.hasError) {
+              return RefreshIndicator(
+                color: AppColors.ember,
+                backgroundColor: AppColors.graphite,
+                onRefresh: _refresh,
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    searchSliver,
+                    if (trendingSliver != null) trendingSliver,
+                    locationSliver,
+                    SliverFillRemaining(
+                      child: EmptyState(
+                        icon: Icons.error_outline,
+                        title: 'Could not load Discover',
+                        message: '${snapshot.error}',
+                        action: FilledButton(
+                          onPressed: _refresh,
+                          child: const Text('Try again'),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
 
-                        return RefreshIndicator(
-                          color: AppColors.ember,
-                          backgroundColor: AppColors.graphite,
-                          onRefresh: _refresh,
-                          child: LayoutBuilder(
-                            builder: (context, constraints) {
-                              // ~150px tiles → 2 columns on a phone, more on web.
-                              var cols = (constraints.maxWidth / 150).floor();
-                              if (cols < 2) cols = 2;
-                              if (cols > 6) cols = 6;
-                              return GridView.builder(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.fromLTRB(
-                                  12,
-                                  0,
-                                  12,
-                                  16,
-                                ),
-                                gridDelegate:
-                                    SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: cols,
-                                      mainAxisSpacing: 12,
-                                      crossAxisSpacing: 12,
-                                      childAspectRatio: 1,
-                                    ),
-                                itemCount: visible.length,
-                                itemBuilder: (_, i) => _GridTile(
-                                  car: visible[i].car,
-                                  distanceLabel: visible[i].distanceKm == null
-                                      ? null
-                                      : UnitsPref.distanceLabel(
-                                          visible[i].distanceKm!,
-                                        ),
-                                  onTap: () => _openCar(visible[i].car),
-                                ),
+            final cars = snapshot.data ?? const <Car>[];
+            if (cars.isEmpty) {
+              return RefreshIndicator(
+                color: AppColors.ember,
+                backgroundColor: AppColors.graphite,
+                onRefresh: _refresh,
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    searchSliver,
+                    if (trendingSliver != null) trendingSliver,
+                    locationSliver,
+                    const SliverFillRemaining(
+                      child: EmptyState(
+                        icon: Icons.travel_explore_outlined,
+                        title: 'No cars to discover yet',
+                        message: 'When other people add cars, they\'ll show up here to follow.',
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            final items = _visibleItems(cars);
+            if (items.isEmpty) {
+              final msg = _isHashtagQuery
+                  ? 'No posts for #$_needle'
+                  : (_nearMe
+                      ? 'No cars within ${UnitsPref.radiusLabel(_radiusKm)}'
+                      : 'No matches');
+              return RefreshIndicator(
+                color: AppColors.ember,
+                backgroundColor: AppColors.graphite,
+                onRefresh: _refresh,
+                child: CustomScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  slivers: [
+                    searchSliver,
+                    if (trendingSliver != null) trendingSliver,
+                    locationSliver,
+                    SliverFillRemaining(
+                      child: Center(
+                        child: EmptyState(
+                          icon: Icons.search_off_outlined,
+                          title: 'No results',
+                          message: msg,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            return RefreshIndicator(
+              color: AppColors.ember,
+              backgroundColor: AppColors.graphite,
+              onRefresh: _refresh,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  var cols = (constraints.maxWidth / 150).floor();
+                  if (cols < 2) cols = 2;
+                  if (cols > 6) cols = 6;
+                  return CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      searchSliver,
+                      if (trendingSliver != null) trendingSliver,
+                      locationSliver,
+                      SliverPadding(
+                        padding: EdgeInsets.fromLTRB(12, 0, 12, 16 + bottomInset),
+                        sliver: SliverGrid(
+                          delegate: SliverChildBuilderDelegate(
+                            (_, i) {
+                              final item = items[i];
+                              if (item.isAd) return const _DiscoverAdTile();
+                              if (item.isPost) {
+                                return _PostGridTile(
+                                  post: item.post!,
+                                  onTap: () => _openPost(item.post!),
+                                );
+                              }
+                              return _GridTile(
+                                car: item.car!,
+                                distanceLabel: item.distanceKm == null
+                                    ? null
+                                    : UnitsPref.distanceLabel(item.distanceKm!),
+                                onTap: () => _openCar(item.car!),
                               );
                             },
+                            childCount: items.length,
                           ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// A horizontal row of suggested search keywords (Phase 1), sitting in the slot
-/// freed by moving the Cars/Partners toggle up to the app bar. Hidden while the
-/// suggestions load or when there are none.
-class _SuggestionsBar extends StatelessWidget {
-  const _SuggestionsBar({required this.future, required this.onTap});
-
-  final Future<List<String>> future;
-  final ValueChanged<String> onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<String>>(
-      future: future,
-      builder: (context, snapshot) {
-        final suggestions = snapshot.data ?? const <String>[];
-        if (suggestions.isEmpty) return const SizedBox.shrink();
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
-          child: SizedBox(
-            height: 34,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: suggestions.length + 1,
-              separatorBuilder: (_, _) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                if (i == 0) {
-                  return Center(
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.auto_awesome,
-                          size: 14,
-                          color: AppColors.steel,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          'For you',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textMuted,
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: cols,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 1,
                           ),
                         ),
-                        const SizedBox(width: 4),
-                      ],
-                    ),
+                      ),
+                    ],
                   );
-                }
-                final keyword = suggestions[i - 1];
-                return _SuggestionChip(
-                  label: keyword,
-                  onTap: () => onTap(keyword),
-                );
-              },
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SuggestionChip extends StatelessWidget {
-  const _SuggestionChip({required this.label, required this.onTap});
-
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.graphiteRaised,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: AppColors.hairline),
-        ),
-        alignment: Alignment.center,
-        child: Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.cream,
-          ),
-        ),
+                },
+              ),
+            );
+          },
       ),
     );
   }
@@ -487,6 +579,53 @@ class _ScoredCar {
   final double? distanceKm;
 }
 
+/// A post (build entry) search result — its own text plus the car it belongs
+/// to, so search can match either.
+class _PostHit {
+  const _PostHit({
+    required this.id,
+    required this.title,
+    this.body,
+    required this.tags,
+    required this.car,
+    this.media,
+  });
+
+  final String id;
+  final String title;
+  final String? body;
+  final List<String> tags;
+  final Car car;
+
+  /// The post's first photo/video, if it has one — what search result tiles
+  /// show and what opens in the post viewer.
+  final PostMedia? media;
+}
+
+/// One entry in the merged Discover grid — a car, a post, or an ad slot. At
+/// most one of [car] / [post] is set; neither set means it's an ad tile.
+class _DiscoverItem {
+  const _DiscoverItem.forCar(this.car, this.distanceKm)
+      : post = null,
+        isAd = false;
+  const _DiscoverItem.forPost(this.post)
+      : car = null,
+        distanceKm = null,
+        isAd = false;
+  const _DiscoverItem.forAd()
+      : car = null,
+        post = null,
+        distanceKm = null,
+        isAd = true;
+
+  final Car? car;
+  final _PostHit? post;
+  final double? distanceKm;
+  final bool isAd;
+
+  bool get isPost => post != null;
+}
+
 /// A square photo tile with the car name tucked along the bottom, plus an
 /// optional distance badge in the top corner when searching nearby.
 class _GridTile extends StatelessWidget {
@@ -496,94 +635,139 @@ class _GridTile extends StatelessWidget {
   final String? distanceLabel;
   final VoidCallback? onTap;
 
+  /// Metadata under the tile name — chassis code when known (the detail car
+  /// people actually search by), else year/make/model. Skipped if it would
+  /// just repeat the title.
+  static String? _subtitle(Car car) {
+    final chassis = car.chassisModel?.trim();
+    final line = (chassis != null && chassis.isNotEmpty)
+        ? '$chassis · ${car.make}'
+        : car.subtitle;
+    return line == car.title ? null : line;
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        // A very thin off-white outline over the tile edge.
+        // Glass rim outline over the tile edge.
         foregroundDecoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.cream, width: 0.5),
+          border: AppDecorations.glassRimBorder(),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(14),
-          child: Stack(
-            fit: StackFit.expand,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (car.hasPhoto)
-                Image.network(
-                  car.photoUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const _TileFallback(),
-                  loadingBuilder: (context, child, progress) =>
-                      progress == null ? child : const _TileFallback(),
-                )
-              else
-                const _TileFallback(),
-              const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.transparent,
-                      Color(0xCC121418),
-                    ],
-                    stops: [0.0, 0.55, 1.0],
-                  ),
-                ),
-              ),
-              Positioned(
-                left: 8,
-                right: 8,
-                bottom: 7,
-                child: Text(
-                  car.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.archivo(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.cream,
-                  ),
-                ),
-              ),
-              if (distanceLabel != null)
-                Positioned(
-                  left: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.location_on,
-                          size: 12,
-                          color: AppColors.ember,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          distanceLabel!,
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.cream,
+              // The photo — a fixed border along its lower edge hands off to
+              // the caption plate below, rather than the name floating over
+              // a gradient fade.
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (car.hasPhoto)
+                      Image.network(
+                        car.thumbnailUrl()!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const _TileFallback(),
+                        loadingBuilder: (context, child, progress) =>
+                            progress == null ? child : const _TileFallback(),
+                      )
+                    else
+                      const _TileFallback(),
+                    if (distanceLabel != null)
+                      Positioned(
+                        left: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.location_on,
+                                size: 12,
+                                color: AppColors.ember,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                distanceLabel!,
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.cream,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
+                  ],
+                ),
+              ),
+              // Caption plate — a Top-Trumps-style stat bar: a fixed liquid-
+              // glass panel below the photo, not laid over it. A hairline rim
+              // along its top edge is the "fixed border" separating photo
+              // from plate; the rim-light border on the whole tile continues
+              // around its outer edge.
+              Container(
+                padding: const EdgeInsets.fromLTRB(9, 7, 9, 8),
+                decoration: BoxDecoration(
+                  gradient: AppColors.isDark
+                      ? const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xD925292F), Color(0xF01A1E24)],
+                        )
+                      : null,
+                  color: AppColors.isDark ? null : const Color(0xFFEEEEEE),
+                  border: Border(
+                    top: BorderSide(
+                      color: AppColors.isDark
+                          ? AppColors.cream.withValues(alpha: 0.14)
+                          : const Color(0x2915171B),
+                      width: 1,
                     ),
                   ),
                 ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      car.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.cream,
+                      ),
+                    ),
+                    if (_subtitle(car) != null)
+                      Text(
+                        _subtitle(car)!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -600,10 +784,269 @@ class _TileFallback extends StatelessWidget {
     return Container(
       color: AppColors.graphiteRaised,
       alignment: Alignment.center,
-      child: const Icon(
+      child: Icon(
         Icons.directions_car_outlined,
         color: AppColors.steel,
         size: 32,
+      ),
+    );
+  }
+}
+
+/// A native-sized AdMob banner squeezed into a grid cell the same size as the
+/// car/post tiles. The ad's own aspect ratio (300×250) doesn't match the
+/// grid's square cells, so it's scaled with [FittedBox] to fill the tile's
+/// width — same technique as [FeedAdSlot], just square-shaped chrome instead
+/// of a full-width card. Renders nothing until an ad actually loads.
+class _DiscoverAdTile extends StatefulWidget {
+  const _DiscoverAdTile();
+
+  @override
+  State<_DiscoverAdTile> createState() => _DiscoverAdTileState();
+}
+
+class _DiscoverAdTileState extends State<_DiscoverAdTile> {
+  BannerAd? _ad;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWhenConsented();
+  }
+
+  Future<void> _loadWhenConsented() async {
+    await ConsentService.instance.ensureReady();
+    if (!mounted || !ConsentService.instance.canRequestAds) return;
+    _ad = BannerAd(
+      adUnitId: AdIds.discoverGridBanner,
+      size: AdSize.mediumRectangle, // 300x250
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (_) {
+          if (mounted) setState(() => _loaded = true);
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          if (mounted) setState(() { _ad = null; _loaded = false; });
+        },
+      ),
+    )..load();
+  }
+
+  @override
+  void dispose() {
+    _ad?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb || !_loaded || _ad == null) return const SizedBox.shrink();
+    return Container(
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: AppDecorations.glassRimBorder(),
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.graphiteRaised,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Center(
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: SizedBox(
+                width: AdSize.mediumRectangle.width.toDouble(),
+                height: AdSize.mediumRectangle.height.toDouble(),
+                child: AdWidget(ad: _ad!),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                'Ad',
+                style: GoogleFonts.inter(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                  color: AppColors.cream,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A search-result tile for a post — its first photo/video, with the post
+/// title and the owning car tucked along the bottom, same layout as
+/// [_GridTile] so cars and posts sit together in one consistent grid.
+class _PostGridTile extends StatelessWidget {
+  const _PostGridTile({required this.post, this.onTap});
+
+  final _PostHit post;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final media = post.media;
+    final title = post.title.trim().isNotEmpty ? post.title.trim() : post.car.title;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        foregroundDecoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          border: AppDecorations.glassRimBorder(),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (media != null)
+                      Image.network(
+                        media.thumbnailUrl(),
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const _TileFallback(),
+                        loadingBuilder: (context, child, progress) =>
+                            progress == null ? child : const _TileFallback(),
+                      )
+                    else
+                      const _TileFallback(),
+                    if (media?.isVideo ?? false)
+                      const Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Icon(
+                          Icons.play_circle_fill,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.fromLTRB(9, 7, 9, 8),
+                decoration: BoxDecoration(
+                  gradient: AppColors.isDark
+                      ? const LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Color(0xD925292F), Color(0xF01A1E24)],
+                        )
+                      : null,
+                  color: AppColors.isDark ? null : const Color(0xFFEEEEEE),
+                  border: Border(
+                    top: BorderSide(
+                      color: AppColors.isDark
+                          ? AppColors.cream.withValues(alpha: 0.14)
+                          : const Color(0x2915171B),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.spaceGrotesk(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.cream,
+                      ),
+                    ),
+                    Text(
+                      post.car.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Horizontally scrolling row of the top 5 trending hashtag chips.
+class _TrendingBar extends StatelessWidget {
+  const _TrendingBar({
+    required this.tags,
+    required this.activeTag,
+    required this.onTap,
+  });
+
+  final List<String> tags;
+  final String activeTag;
+  final ValueChanged<String> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 34,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: tags.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final tag = tags[i];
+          final active = activeTag == tag;
+          return GestureDetector(
+            onTap: () => onTap(tag),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              decoration: BoxDecoration(
+                color: active
+                    ? AppColors.ember.withValues(alpha: 0.15)
+                    : AppColors.graphiteRaised,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: active ? AppColors.ember : AppColors.hairline,
+                  width: active ? 1.5 : 1,
+                ),
+              ),
+              child: Text(
+                '#$tag',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: active ? AppColors.ember : AppColors.textSecondary,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -621,6 +1064,7 @@ class _LocationBar extends StatelessWidget {
     required this.onToggle,
     required this.onChangeLocation,
     required this.onRadiusChanged,
+    required this.onShowdownTap,
   });
 
   final bool nearMe;
@@ -631,6 +1075,7 @@ class _LocationBar extends StatelessWidget {
   final ValueChanged<bool>? onToggle;
   final VoidCallback? onChangeLocation;
   final ValueChanged<double> onRadiusChanged;
+  final VoidCallback onShowdownTap;
 
   @override
   Widget build(BuildContext context) {
@@ -689,6 +1134,8 @@ class _LocationBar extends StatelessWidget {
                     ),
                   ),
                 ),
+              if (!nearMe) const Spacer(),
+              _ShowdownChip(onTap: onShowdownTap),
             ],
           ),
           if (nearMe)
@@ -728,6 +1175,52 @@ class _LocationBar extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _ShowdownChip extends StatelessWidget {
+  const _ShowdownChip({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Challenge?>(
+      future: ChallengeService.instance.fetchActive().then(
+        (active) async => active ??
+            (await ChallengeService.instance.fetchAll()).firstOrNull,
+      ),
+      builder: (context, snap) {
+        final c = snap.data;
+        if (c == null) return const SizedBox.shrink();
+        return GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              color: AppColors.isDark ? const Color(0xFF111111) : AppColors.graphiteRaised,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.ember.withValues(alpha: 0.5), width: 1),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'THE SHOT',
+                  style: GoogleFonts.spaceGrotesk(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.cream,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right, size: 16, color: AppColors.ember),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

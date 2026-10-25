@@ -16,13 +16,21 @@ class AdIds {
   static const String _testBannerIos = 'ca-app-pub-3940256099942544/2934735716';
   static const String _testBannerAndroid = 'ca-app-pub-3940256099942544/6300978111';
 
-  // Real TorqueDen feed MREC (300x250) banner unit. iOS is live; Android is
-  // parked, so its real ID is still a placeholder.
+  // Real TorqueDen feed MREC (300x250) banner unit, both platforms live.
   static const String _realBannerIos = 'ca-app-pub-5912511696757213/5082751920';
-  static const String _realBannerAndroid = 'ca-app-pub-0000000000000000/0000000000';
+  static const String _realBannerAndroid = 'ca-app-pub-5912511696757213/3627433552';
+
+  // Real TorqueDen Discover-grid MREC (300x250) banner unit, both platforms live.
+  static const String _realDiscoverGridIos = 'ca-app-pub-5912511696757213/7146788429';
+  static const String _realDiscoverGridAndroid = 'ca-app-pub-5912511696757213/1025213145';
 
   static String get feedBanner {
     if (useTestAds) return Platform.isIOS ? _testBannerIos : _testBannerAndroid;
     return Platform.isIOS ? _realBannerIos : _realBannerAndroid;
+  }
+
+  static String get discoverGridBanner {
+    if (useTestAds) return Platform.isIOS ? _testBannerIos : _testBannerAndroid;
+    return Platform.isIOS ? _realDiscoverGridIos : _realDiscoverGridAndroid;
   }
 }

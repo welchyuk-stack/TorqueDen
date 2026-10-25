@@ -69,13 +69,13 @@ class _SetNewPasswordScreenState extends State<SetNewPasswordScreen> {
                     const Center(child: Wordmark(fontSize: 30)),
                     const SizedBox(height: 32),
                     Text('Set a new password',
-                        style: GoogleFonts.archivo(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                        style: GoogleFonts.spaceGrotesk(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.cream)),
                     const SizedBox(height: 20),
                     TextFormField(
                       controller: _password,
                       obscureText: true,
                       decoration: const InputDecoration(labelText: 'New password'),
-                      validator: (v) => (v ?? '').length < 6 ? 'At least 6 characters' : null,
+                      validator: (v) => (v ?? '').length < 8 ? 'At least 8 characters' : null,
                     ),
                     const SizedBox(height: 14),
                     TextFormField(

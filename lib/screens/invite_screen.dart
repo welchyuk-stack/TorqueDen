@@ -65,7 +65,7 @@ class InviteScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 Text('Bring your crew',
-                    style: GoogleFonts.archivo(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.cream)),
+                    style: GoogleFonts.spaceGrotesk(fontSize: 24, fontWeight: FontWeight.w800, color: AppColors.cream)),
                 const SizedBox(height: 12),
                 Text(
                   'Know someone with a build worth showing off? Share TorqueDen and '
@@ -80,11 +80,7 @@ class InviteScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.graphiteRaised,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.hairline),
-                    ),
+                    decoration: AppDecorations.glassCard(radius: 12),
                     child: Row(
                       children: [
                         Expanded(
@@ -94,7 +90,7 @@ class InviteScreen extends StatelessWidget {
                               style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 13)),
                         ),
                         const SizedBox(width: 10),
-                        const Icon(Icons.copy, size: 18, color: AppColors.steel),
+                        Icon(Icons.copy, size: 18, color: AppColors.steel),
                       ],
                     ),
                   ),

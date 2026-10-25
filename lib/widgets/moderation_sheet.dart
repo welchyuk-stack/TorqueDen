@@ -37,7 +37,7 @@ Future<void> showModerationSheet(
         children: [
           const SizedBox(height: 8),
           ListTile(
-            leading: const Icon(Icons.flag_outlined, color: AppColors.steel),
+            leading: Icon(Icons.flag_outlined, color: AppColors.steel),
             title: const Text('Report'),
             subtitle: const Text('Flag this for review'),
             onTap: () => Navigator.pop(ctx, 'report'),
@@ -78,7 +78,7 @@ Future<void> _report(BuildContext context, String targetType, String targetId) a
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
             child: Text('Why are you reporting this?',
-                style: GoogleFonts.archivo(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.cream)),
+                style: GoogleFonts.spaceGrotesk(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.cream)),
           ),
           for (final r in _reasons)
             ListTile(title: Text(r), onTap: () => Navigator.pop(ctx, r)),
@@ -107,7 +107,7 @@ Future<void> _block(
     builder: (ctx) => AlertDialog(
       backgroundColor: AppColors.graphite,
       title: Text('Block $name?',
-          style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+          style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
       content: Text('Their posts, replies and comments will be hidden from you.',
           style: GoogleFonts.inter(color: AppColors.textSecondary)),
       actions: [

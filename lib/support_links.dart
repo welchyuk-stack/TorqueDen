@@ -9,7 +9,7 @@ class SupportLinks {
   SupportLinks._();
 
   static const String supportEmail = 'torquedenapp@gmail.com';
-  static const String paypalDonateUrl = 'https://www.paypal.com/paypalme/torqueden';
+  static const String paypalDonateUrl = 'https://www.paypal.com/paypalme/lwelchyo';
   static const String appStoreUrl = 'https://apps.apple.com/app/torqueden/id0000000000';
   static const String playStoreUrl =
       'https://play.google.com/store/apps/details?id=com.torqueden.app';

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart' show PlatformException;
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -26,7 +27,7 @@ class IapService {
   /// Configure the RevenueCat SDK. No-op until a real key is set, so it's safe
   /// to call at startup. Identifies the current user if already logged in.
   Future<void> configure() async {
-    if (_configured || !IapConfig.isConfigured) return;
+    if (_configured || !IapConfig.isConfigured || kIsWeb) return;
     try {
       await Purchases.setLogLevel(LogLevel.info);
       final config = PurchasesConfiguration(IapConfig.appleApiKey);

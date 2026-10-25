@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -30,6 +31,7 @@ class LocationService {
   /// Requests permission (if needed) and returns the device's current position.
   /// Throws [LocationException] with a friendly message on any failure.
   static Future<Position> currentPosition() async {
+    if (kIsWeb) throw const LocationException('Location requires a mobile device.');
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw const LocationException(
         'Location services are turned off. Enable them in Settings to search nearby.',

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -85,6 +86,13 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _setup() async {
+    if (kIsWeb) {
+      setState(() {
+        _error = 'Camera is not available on web. Use the library option instead.';
+        _initializing = false;
+      });
+      return;
+    }
     try {
       _cameras = await availableCameras();
       if (_cameras.isEmpty) {
@@ -219,7 +227,7 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.carbon,
       body: _error != null
           ? _ErrorView(message: _error!, onClose: () => Navigator.of(context).pop())
           : Stack(
@@ -356,8 +364,8 @@ class _CaptureButton extends StatelessWidget {
               child: CircularProgressIndicator(
                 value: recording ? ring.value : 1,
                 strokeWidth: 4,
-                color: recording ? AppColors.ember : Colors.white,
-                backgroundColor: Colors.white24,
+                color: recording ? AppColors.ember : AppColors.cream,
+                backgroundColor: Colors.white12,
               ),
             ),
           ),
@@ -366,7 +374,7 @@ class _CaptureButton extends StatelessWidget {
             width: recording ? 34 : 66,
             height: recording ? 34 : 66,
             decoration: BoxDecoration(
-              color: recording ? AppColors.danger : Colors.white,
+              color: recording ? AppColors.danger : AppColors.cream,
               borderRadius: BorderRadius.circular(recording ? 8 : 999),
             ),
           ),
@@ -427,7 +435,7 @@ class _RoundIcon extends StatelessWidget {
         customBorder: const CircleBorder(),
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: Icon(icon, color: Colors.white, size: 22),
+          child: Icon(icon, color: AppColors.cream, size: 22),
         ),
       ),
     );
@@ -452,7 +460,7 @@ class _ErrorView extends StatelessWidget {
               child: _RoundIcon(icon: Icons.close, onTap: onClose),
             ),
             const Spacer(),
-            const Icon(Icons.videocam_off_outlined, color: AppColors.steel, size: 48),
+            Icon(Icons.videocam_off_outlined, color: AppColors.steel, size: 48),
             const SizedBox(height: 16),
             Text(
               message,

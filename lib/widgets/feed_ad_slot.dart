@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -54,7 +55,7 @@ class _FeedAdSlotState extends State<FeedAdSlot> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_loaded || _ad == null) return const SizedBox.shrink();
+    if (kIsWeb || !_loaded || _ad == null) return const SizedBox.shrink();
     return Container(
       decoration: BoxDecoration(
         color: AppColors.graphite,

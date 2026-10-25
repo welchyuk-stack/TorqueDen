@@ -13,12 +13,16 @@ class BuildEntry {
     this.media = const [],
     this.linkedModLabel,
     this.linkedCategory,
+    this.locationName,
+    this.tags = const [],
   });
 
   final String id;
   final String carId;
   final String title;
   final String? body;
+  final String? locationName;
+  final List<String> tags;
 
   /// Optional mod category, e.g. "Exhaust" or "Suspension". Null for a plain
   /// build update that isn't a specific mod.
@@ -74,6 +78,8 @@ class BuildEntry {
       media: media,
       linkedModLabel: _labelFromLinked(linked),
       linkedCategory: linked?['category'] as String?,
+      locationName: map['location_name'] as String?,
+      tags: (map['tags'] as List<dynamic>?)?.cast<String>() ?? const [],
     );
   }
 }

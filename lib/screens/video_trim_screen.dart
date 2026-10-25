@@ -144,7 +144,7 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.graphite,
         title: Text('Caption',
-            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -186,14 +186,14 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
                 label: Text(hasText ? 'Edit text' : 'Add text'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.ember,
-                  side: const BorderSide(color: AppColors.hairline),
+                  side: BorderSide(color: AppColors.hairline),
                 ),
               ),
               if (hasText) ...[
                 const Spacer(),
                 IconButton(
                   onPressed: _exporting ? null : () => setState(() => _text = null),
-                  icon: const Icon(Icons.close, size: 18, color: AppColors.steel),
+                  icon: Icon(Icons.close, size: 18, color: AppColors.steel),
                   tooltip: 'Remove text',
                 ),
               ],
@@ -218,7 +218,7 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
             ),
             Row(
               children: [
-                const Icon(Icons.rotate_right, size: 18, color: AppColors.steel),
+                Icon(Icons.rotate_right, size: 18, color: AppColors.steel),
                 Expanded(
                   child: Slider(
                     min: -180,
@@ -307,7 +307,7 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.graphite,
         title: Text('Text colour',
-            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+            style: GoogleFonts.spaceGrotesk(color: AppColors.cream, fontWeight: FontWeight.w700)),
         content: SingleChildScrollView(
           child: ColorPicker(
             pickerColor: temp,
@@ -383,9 +383,8 @@ class _VideoTrimScreenState extends State<VideoTrimScreen> {
     final cf = _filter.colorFilter;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.carbon,
       appBar: AppBar(
-        backgroundColor: Colors.black,
         title: const Text('Edit clip'),
         leading: IconButton(
           icon: const Icon(Icons.close),

@@ -5,8 +5,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/iap/iap_service.dart';
 import 'package:torqueden/push/push_service.dart';
 import 'package:torqueden/main_shell.dart';
-import 'package:torqueden/screens/auth/auth_screen.dart';
 import 'package:torqueden/screens/auth/set_new_password_screen.dart';
+import 'package:torqueden/services/guest_mode.dart';
 
 /// Decides what the user sees based on login state:
 ///   password recovery → set-new-password screen
@@ -41,6 +41,7 @@ class _AuthGateState extends State<AuthGate> {
       } else if (state.event == AuthChangeEvent.signedOut) {
         IapService.instance.signOut();
         PushService.instance.unregister();
+        GuestMode.clear();
       }
       if (mounted) setState(() {});
     });
@@ -57,7 +58,8 @@ class _AuthGateState extends State<AuthGate> {
     if (_recovering) {
       return SetNewPasswordScreen(onDone: () => setState(() => _recovering = false));
     }
-    if (_auth.currentSession != null) return const MainShell();
-    return const AuthScreen();
+    // Always show the shell — unauthenticated users get a public feed and
+    // read-only access; write actions (post, like, follow, DM) gate to sign-up.
+    return const MainShell();
   }
 }

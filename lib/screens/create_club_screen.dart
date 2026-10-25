@@ -1,12 +1,15 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/club.dart';
 import 'package:torqueden/screens/add_car_screen.dart' show kCarPhotosBucket;
+import 'package:torqueden/utils/image_compress.dart';
 import 'package:torqueden/services/entitlements.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/widgets/settings_group.dart';
 import 'package:torqueden/widgets/upgrade_sheet.dart';
 
 /// Create a new club. Pops the created [Club] on success (the owner is added as
@@ -46,7 +49,8 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
       imageQuality: 85,
     );
     if (picked == null) return;
-    final bytes = await picked.readAsBytes();
+    final raw = await picked.readAsBytes();
+    final bytes = await compressImageBytes(raw);
     if (!mounted) return;
     setState(() {
       _bannerBytes = bytes;
@@ -61,7 +65,8 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
       imageQuality: 85,
     );
     if (picked == null) return;
-    final bytes = await picked.readAsBytes();
+    final raw = await picked.readAsBytes();
+    final bytes = await compressImageBytes(raw);
     if (!mounted) return;
     setState(() {
       _iconBytes = bytes;
@@ -87,12 +92,27 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     final client = Supabase.instance.client;
+    final clubName = _name.text.trim();
     final desc = _description.text.trim();
     final rules = _rules.text.trim();
     try {
+      // Duplicate name check
+      final existing = await client
+          .from('clubs')
+          .select('id')
+          .ilike('name', clubName)
+          .limit(1);
+      if (existing.isNotEmpty) {
+        if (!mounted) return;
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('A forum called "$clubName" already exists. Choose a different name.')),
+        );
+        return;
+      }
       // owner_id defaults to auth.uid(); the trigger adds owner membership.
       final rows = await client.from('clubs').insert({
-        'name': _name.text.trim(),
+        'name': clubName,
         'description': desc.isEmpty ? null : desc,
         'rules': rules.isEmpty ? null : rules,
         'is_private': _private,
@@ -118,9 +138,9 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
 
       if (mounted) Navigator.of(context).pop(club);
     } on PostgrestException catch (e) {
-      _fail('Could not create the club: ${e.message}');
+      _fail('Could not create the forum: ${e.message}');
     } catch (e) {
-      _fail('Could not create the club: $e');
+      _fail('Could not create the forum: $e');
     }
   }
 
@@ -135,7 +155,31 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Create a club')),
+      appBar: AppBar(
+        title: const Text('Create a forum'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _saving
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.ember),
+                    ),
+                  )
+                : TextButton(
+                    onPressed: _create,
+                    child: Text('Create',
+                        style: GoogleFonts.inter(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          color: AppColors.ember,
+                        )),
+                  ),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -143,176 +187,234 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
             child: Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
                 children: [
+
+                  // ── Banner ────────────────────────────────────────────
                   GestureDetector(
                     onTap: _saving ? null : _pickBanner,
-                    child: AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(16),
+                      child: AspectRatio(
+                        aspectRatio: 16 / 7,
                         child: _bannerBytes != null
                             ? Stack(fit: StackFit.expand, children: [
                                 Image.memory(_bannerBytes!, fit: BoxFit.cover),
-                                const Positioned(
-                                  right: 10,
-                                  bottom: 10,
-                                  child: _Badge(text: 'Change banner'),
+                                Positioned(
+                                  right: 12, bottom: 12,
+                                  child: _PillBadge(
+                                    icon: Icons.photo_camera_outlined,
+                                    text: 'Change banner',
+                                  ),
                                 ),
                               ])
-                            : DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: AppColors.graphiteRaised,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: AppColors.hairline),
-                                ),
-                                child: const Column(
+                            : Container(
+                                decoration: AppDecorations.glassCard(radius: 16),
+                                child: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.image_outlined, size: 34, color: AppColors.steel),
-                                    SizedBox(height: 8),
-                                    Text('Add a banner (optional)',
-                                        style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                                    Icon(Icons.image_outlined, size: 32, color: AppColors.steel),
+                                    const SizedBox(height: 8),
+                                    Text('Add banner image',
+                                        style: GoogleFonts.inter(
+                                            color: AppColors.textSecondary, fontSize: 14)),
+                                    const SizedBox(height: 2),
+                                    Text('optional',
+                                        style: GoogleFonts.inter(
+                                            color: AppColors.textMuted, fontSize: 12)),
                                   ],
                                 ),
                               ),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  // Club icon — shown in search results and the clubs list.
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: _saving ? null : _pickIcon,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: SizedBox(
-                            width: 64,
-                            height: 64,
-                            child: _iconBytes != null
-                                ? Image.memory(_iconBytes!, fit: BoxFit.cover)
-                                : DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: AppColors.graphiteRaised,
-                                      border: Border.all(color: AppColors.hairline),
-                                    ),
-                                    child: const Icon(Icons.groups, color: AppColors.steel),
+
+                  const SizedBox(height: 20),
+
+                  // ── Icon + Name row ───────────────────────────────────
+                  Container(
+                    decoration: AppDecorations.glassCard(radius: 16),
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Single tap target for icon
+                        GestureDetector(
+                          onTap: _saving ? null : _pickIcon,
+                          child: Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(16),
+                                child: SizedBox(
+                                  width: 72, height: 72,
+                                  child: _iconBytes != null
+                                      ? Image.memory(_iconBytes!, fit: BoxFit.cover)
+                                      : Container(
+                                          color: AppColors.graphite,
+                                          child: Icon(Icons.groups_outlined,
+                                              color: AppColors.steel, size: 32),
+                                        ),
+                                ),
+                              ),
+                              Positioned(
+                                right: 0, bottom: 0,
+                                child: Container(
+                                  width: 24, height: 24,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.ember,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: AppColors.carbon, width: 2),
                                   ),
+                                  child: const Icon(Icons.photo_camera,
+                                      color: Colors.white, size: 13),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            OutlinedButton.icon(
-                              onPressed: _saving ? null : _pickIcon,
-                              icon: const Icon(Icons.photo_camera_outlined, size: 18),
-                              label: Text(_iconBytes != null ? 'Change icon' : 'Add club icon'),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.ember,
-                                side: const BorderSide(color: AppColors.hairline),
-                                padding: const EdgeInsets.symmetric(vertical: 13),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextFormField(
+                                controller: _name,
+                                textCapitalization: TextCapitalization.words,
+                                maxLength: 60,
+                                style: GoogleFonts.spaceGrotesk(
+                                    color: AppColors.cream,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700),
+                                validator: (v) =>
+                                    (v == null || v.trim().isEmpty)
+                                        ? 'Give your forum a name'
+                                        : null,
+                                decoration: InputDecoration(
+                                  labelText: 'Forum name *',
+                                  hintText: 'e.g. E85 Tuning',
+                                  counterStyle: GoogleFonts.inter(
+                                      color: AppColors.textMuted, fontSize: 11),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            const Text('Shown in search and your clubs list.',
-                                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ── Description + Rules ───────────────────────────────
+                  Container(
+                    decoration: AppDecorations.glassCard(radius: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _description,
+                          textCapitalization: TextCapitalization.sentences,
+                          maxLines: 3,
+                          maxLength: 300,
+                          style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                          decoration: InputDecoration(
+                            labelText: 'What\'s it about?',
+                            hintText: 'A line or two so people know what they\'re joining.',
+                            counterStyle: GoogleFonts.inter(
+                                color: AppColors.textMuted, fontSize: 11),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                          ),
+                        ),
+                        Divider(height: 1, color: AppColors.hairline),
+                        TextFormField(
+                          controller: _rules,
+                          textCapitalization: TextCapitalization.sentences,
+                          maxLines: 3,
+                          maxLength: 500,
+                          style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                          decoration: InputDecoration(
+                            labelText: 'Forum rules',
+                            hintText: 'House rules shown at the top of the forum. Optional.',
+                            counterStyle: GoogleFonts.inter(
+                                color: AppColors.textMuted, fontSize: 11),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // ── Privacy toggle ────────────────────────────────────
+                  SettingsGroup(
+                    children: [
+                      if (Entitlements.canCreatePrivateClubs)
+                        SwitchListTile(
+                          value: _private,
+                          onChanged: _saving ? null : (v) => setState(() => _private = v),
+                          activeThumbColor: AppColors.ember,
+                          secondary: Icon(
+                              _private ? Icons.lock : Icons.public_outlined,
+                              color: AppColors.steel),
+                          title: Text('Private forum',
+                              style: GoogleFonts.inter(
+                                  color: AppColors.cream,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15)),
+                          subtitle: Text(
+                              'Members only — people must request to join.',
+                              style: GoogleFonts.inter(
+                                  color: AppColors.textMuted, fontSize: 13)),
+                        )
+                      else
+                        ListTile(
+                          onTap: () => showUpgradeSheet(
+                            context,
+                            title: 'Private forums are Premium',
+                            message: 'Free forums are public. Upgrade to Premium to create '
+                                'private, request-to-join forums.',
+                          ),
+                          leading: Icon(Icons.lock_outline, color: AppColors.steel),
+                          title: Text('Private forum',
+                              style: GoogleFonts.inter(
+                                  color: AppColors.cream,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15)),
+                          subtitle: Text('Premium — tap to upgrade',
+                              style: GoogleFonts.inter(
+                                  color: AppColors.textMuted, fontSize: 13)),
+                          trailing: const Icon(Icons.workspace_premium_outlined,
+                              color: AppColors.ember),
+                        ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _name,
-                    textCapitalization: TextCapitalization.words,
-                    maxLength: 60,
-                    validator: (v) =>
-                        (v == null || v.trim().isEmpty) ? 'Give your club a name' : null,
-                    decoration: const InputDecoration(
-                      labelText: 'Club name *',
-                      hintText: 'e.g. E85 Tuning',
+
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(
+                      _private
+                          ? 'Private forums are listed in Discover but members-only to view. You\'re the owner and can remove posts.'
+                          : 'Public forums are open to everyone — anyone can find and join. You\'re the owner and can remove posts.',
+                      style: GoogleFonts.inter(
+                          fontSize: 12, color: AppColors.textMuted, height: 1.4),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _description,
-                    textCapitalization: TextCapitalization.sentences,
-                    maxLines: 4,
-                    maxLength: 300,
-                    decoration: const InputDecoration(
-                      labelText: 'What\'s it about?',
-                      hintText: 'A line or two so people know what they\'re joining.',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextFormField(
-                    controller: _rules,
-                    textCapitalization: TextCapitalization.sentences,
-                    maxLines: 4,
-                    maxLength: 500,
-                    decoration: const InputDecoration(
-                      labelText: 'Club rules (optional)',
-                      hintText: 'House rules shown at the top of the club.',
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  if (Entitlements.canCreatePrivateClubs)
-                    SwitchListTile(
-                      value: _private,
-                      onChanged: _saving ? null : (v) => setState(() => _private = v),
-                      activeThumbColor: AppColors.ember,
-                      tileColor: AppColors.graphite,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        side: const BorderSide(color: AppColors.hairline),
-                      ),
-                      title: const Text('Private club',
-                          style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                      subtitle: const Text(
-                          'People must request to join, and only members see the discussions.',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                      secondary: Icon(_private ? Icons.lock : Icons.public, color: AppColors.steel),
-                    )
-                  else
-                    // Private clubs are Premium — free clubs are public.
-                    ListTile(
-                      onTap: () => showUpgradeSheet(
-                        context,
-                        title: 'Private clubs are Premium',
-                        message: 'Free clubs are public. Upgrade to Premium to create '
-                            'private, request-to-join clubs.',
-                      ),
-                      tileColor: AppColors.graphite,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        side: const BorderSide(color: AppColors.hairline),
-                      ),
-                      leading: const Icon(Icons.lock_outline, color: AppColors.steel),
-                      title: const Text('Private club',
-                          style: TextStyle(color: AppColors.cream, fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Premium — tap to upgrade',
-                          style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
-                      trailing: const Icon(Icons.workspace_premium_outlined, color: AppColors.ember),
-                    ),
-                  const SizedBox(height: 16),
-                  if (_saving)
-                    const Center(child: CircularProgressIndicator(color: AppColors.ember))
-                  else
-                    FilledButton.icon(
-                      onPressed: _create,
-                      icon: const Icon(Icons.groups, size: 20),
-                      label: const Text('Create club'),
-                    ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _private
-                        ? 'Your club is private — it\'s still listed in Discover, but people must request to join and only members can see posts. You\'re the owner and can remove posts.'
-                        : 'Your club is public — anyone can find it and join. You\'re the owner and can remove posts.',
-                    style: Theme.of(context).textTheme.bodySmall,
+
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: _saving ? null : _create,
+                    icon: const Icon(Icons.groups, size: 20),
+                    label: const Text('Create forum'),
                   ),
                 ],
               ),
@@ -324,18 +426,30 @@ class _CreateClubScreenState extends State<CreateClubScreen> {
   }
 }
 
-class _Badge extends StatelessWidget {
-  const _Badge({required this.text});
+class _PillBadge extends StatelessWidget {
+  const _PillBadge({required this.icon, required this.text});
+  final IconData icon;
   final String text;
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.55),
+        color: Colors.black.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(text, style: const TextStyle(color: AppColors.cream, fontSize: 12, fontWeight: FontWeight.w600)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: AppColors.cream),
+          const SizedBox(width: 5),
+          Text(text,
+              style: GoogleFonts.inter(
+                  color: AppColors.cream,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+        ],
+      ),
     );
   }
 }

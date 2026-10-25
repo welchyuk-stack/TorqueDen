@@ -4,12 +4,12 @@
 String friendlyPostError(Object e) {
   final s = e.toString();
   if (s.contains('BLOCKED_WORD')) {
-    return 'Your post contains a word that isn\'t allowed in this club.';
+    return 'Your post contains a word that isn\'t allowed in this forum.';
   }
   if (s.contains('row-level security') ||
       s.contains('violates') ||
       s.contains('42501')) {
-    return 'You can\'t post right now — the club may be locked or in slow mode, '
+    return 'You can\'t post right now — the forum may be locked or in slow mode, '
         'or you may be muted.';
   }
   return 'Could not post. Please try again.';

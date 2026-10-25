@@ -75,7 +75,7 @@ class _ContactScreenState extends State<ContactScreen> {
             DropdownButtonFormField<String>(
               initialValue: _topic,
               isExpanded: true,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Topic',
                 prefixIcon: Icon(Icons.label_outline, color: AppColors.steel, size: 20),
               ),

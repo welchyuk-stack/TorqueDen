@@ -57,6 +57,7 @@ class _PostMediaViewState extends State<PostMediaView> {
             media: media[i],
             startMuted: widget.startMuted,
             imageFit: widget.fill ? BoxFit.contain : BoxFit.cover,
+            fullRes: widget.fill,
           ),
         ),
         if (media.length > 1) ...[
@@ -66,7 +67,7 @@ class _PostMediaViewState extends State<PostMediaView> {
             child: _Pill(text: '${_page + 1}/${media.length}'),
           ),
           Positioned(
-            bottom: 10,
+            bottom: 46,
             left: 0,
             right: 0,
             child: _Dots(count: media.length, index: _page),
@@ -75,11 +76,18 @@ class _PostMediaViewState extends State<PostMediaView> {
       ],
     );
 
-    // Fullscreen: fill the parent as-is. Otherwise a rounded, fixed-ratio card.
+    // Fullscreen: fill the parent as-is. Otherwise a rounded, fixed-ratio card
+    // with a faint rim so dark night-shots keep an edge against dark surfaces.
     if (widget.fill) return stack;
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: AspectRatio(aspectRatio: widget.aspectRatio, child: stack),
+    return Container(
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: AspectRatio(aspectRatio: widget.aspectRatio, child: stack),
+      ),
     );
   }
 }
@@ -89,21 +97,22 @@ class _MediaItem extends StatelessWidget {
     required this.media,
     this.startMuted = true,
     this.imageFit = BoxFit.cover,
+    this.fullRes = false,
   });
 
   final PostMedia media;
   final bool startMuted;
   final BoxFit imageFit;
+  final bool fullRes;
 
   @override
   Widget build(BuildContext context) {
     if (media.isVideo) {
-      // Always show the whole recorded frame (letterbox rather than crop), so
-      // nothing near the edges — like a corner caption — gets cut off.
       return _VideoItem(url: media.url, startMuted: startMuted);
     }
+    final imageUrl = fullRes ? media.url : media.thumbnailUrl();
     return Image.network(
-      media.url,
+      imageUrl,
       fit: imageFit,
       errorBuilder: (_, _, _) => const _MediaFallback(),
       loadingBuilder: (context, child, progress) =>
@@ -190,7 +199,7 @@ class _VideoItemState extends State<_VideoItem> {
       return Container(
         color: AppColors.graphiteRaised,
         alignment: Alignment.center,
-        child: const Icon(Icons.videocam_off_outlined, color: AppColors.steel, size: 40),
+        child: Icon(Icons.videocam_off_outlined, color: AppColors.steel, size: 40),
       );
     }
     if (!_ready || c == null) {
@@ -243,7 +252,7 @@ class _VideoItemState extends State<_VideoItem> {
               bottom: 0,
               child: VideoProgressIndicator(
                 c,
-                allowScrubbing: false,
+                allowScrubbing: true,
                 padding: EdgeInsets.zero,
                 colors: const VideoProgressColors(
                   playedColor: AppColors.ember,
@@ -267,7 +276,7 @@ class _MediaFallback extends StatelessWidget {
     return Container(
       color: AppColors.graphiteRaised,
       alignment: Alignment.center,
-      child: const Icon(Icons.image_outlined, color: AppColors.steel, size: 40),
+      child: Icon(Icons.image_outlined, color: AppColors.steel, size: 40),
     );
   }
 }
@@ -287,7 +296,7 @@ class _Pill extends StatelessWidget {
       ),
       child: Text(
         text,
-        style: const TextStyle(color: AppColors.cream, fontSize: 12, fontWeight: FontWeight.w600),
+        style: TextStyle(color: AppColors.cream, fontSize: 12, fontWeight: FontWeight.w600),
       ),
     );
   }

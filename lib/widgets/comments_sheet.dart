@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:torqueden/models/post_comment.dart';
+import 'package:torqueden/services/guest_mode.dart';
 import 'package:torqueden/services/moderation.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/widgets/empty_state.dart';
+import 'package:torqueden/widgets/guest_nudge_sheet.dart';
 import 'package:torqueden/widgets/moderation_sheet.dart';
 
 /// A modal-bottom-sheet body that shows the comment thread for a build update
@@ -57,6 +60,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
   /// The comment currently being replied to, or null for a top-level comment.
   PostComment? _replyTarget;
   bool _sending = false;
+
+  String? get _uid => _client.auth.currentUser?.id;
 
   @override
   void initState() {
@@ -125,11 +130,47 @@ class _CommentsSheetState extends State<CommentsSheet> {
     );
   }
 
+  Future<void> _deleteComment(PostComment comment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.graphite,
+        title: Text('Delete comment?',
+            style: GoogleFonts.archivo(color: AppColors.cream, fontWeight: FontWeight.w700)),
+        content: Text('This cannot be undone.',
+            style: GoogleFonts.inter(color: AppColors.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete',
+                style: GoogleFonts.inter(color: AppColors.danger, fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await _client.from('post_comments').delete().eq('id', comment.id);
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not delete comment: $e')),
+        );
+      }
+    }
+  }
+
   void _cancelReply() {
     setState(() => _replyTarget = null);
   }
 
   Future<void> _send() async {
+    if (GuestMode.isGuest) {
+      await showGuestNudge(context, reason: 'comment on posts');
+      return;
+    }
     final user = _client.auth.currentUser;
     if (user == null) return;
 
@@ -172,7 +213,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       mainAxisSize: widget.fillParent ? MainAxisSize.max : MainAxisSize.min,
       children: [
           _header(),
-          const Divider(height: 1, color: AppColors.hairline),
+          Divider(height: 1, color: AppColors.hairline),
           Expanded(
             child: FutureBuilder<List<PostComment>>(
               future: _commentsFuture,
@@ -187,7 +228,11 @@ class _CommentsSheetState extends State<CommentsSheet> {
                 }
                 final threads = _buildThreads(snapshot.data ?? const []);
                 if (threads.isEmpty) {
-                  return _centeredMuted('No comments yet — start the conversation.');
+                  return const EmptyState(
+                    icon: Icons.mode_comment_outlined,
+                    title: 'No comments yet',
+                    message: 'Be the first to say something.',
+                  );
                 }
                 return ListView.builder(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -200,7 +245,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
                         _CommentTile(
                           comment: thread.comment,
                           onReply: () => _startReply(thread.comment),
-                          onMore: () => _moderate(thread.comment),
+                          onMore: thread.comment.userId == _uid
+                              ? null
+                              : () => _moderate(thread.comment),
+                          onDelete: thread.comment.userId == _uid
+                              ? () => _deleteComment(thread.comment)
+                              : null,
                         ),
                         for (final reply in thread.replies)
                           Padding(
@@ -208,7 +258,12 @@ class _CommentsSheetState extends State<CommentsSheet> {
                             child: _CommentTile(
                               comment: reply,
                               onReply: () => _startReply(thread.comment),
-                              onMore: () => _moderate(reply),
+                              onMore: reply.userId == _uid
+                                  ? null
+                                  : () => _moderate(reply),
+                              onDelete: reply.userId == _uid
+                                  ? () => _deleteComment(reply)
+                                  : null,
                             ),
                           ),
                       ],
@@ -218,14 +273,14 @@ class _CommentsSheetState extends State<CommentsSheet> {
               },
             ),
           ),
-          const Divider(height: 1, color: AppColors.hairline),
+          Divider(height: 1, color: AppColors.hairline),
           _inputBar(keyboardInset),
         ],
       );
 
     if (widget.fillParent) return content;
     return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.75,
+      height: MediaQuery.sizeOf(context).height * 0.50,
       child: content,
     );
   }
@@ -237,7 +292,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
         children: [
           Text(
             'Comments',
-            style: GoogleFonts.archivo(
+            style: GoogleFonts.spaceGrotesk(
               fontSize: 18,
               fontWeight: FontWeight.w700,
               color: AppColors.cream,
@@ -246,7 +301,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
           const Spacer(),
           IconButton(
             onPressed: widget.onClose ?? () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.close, color: AppColors.steel),
+            icon: Icon(Icons.close, color: AppColors.steel),
             tooltip: 'Close',
           ),
         ],
@@ -274,7 +329,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
   Widget _inputBar(double keyboardInset) {
     final replyTo = _replyTarget;
     return Padding(
-      padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + keyboardInset),
+      padding: EdgeInsets.fromLTRB(12, 10, 12, 10 + keyboardInset + MediaQuery.of(context).padding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,10 +403,7 @@ class _CommentsSheetState extends State<CommentsSheet> {
       padding: const EdgeInsets.only(left: 4, bottom: 8),
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
-        decoration: BoxDecoration(
-          color: AppColors.graphiteRaised,
-          borderRadius: BorderRadius.circular(16),
-        ),
+        decoration: AppDecorations.glassCard(radius: 16),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -369,8 +421,8 @@ class _CommentsSheetState extends State<CommentsSheet> {
             InkWell(
               onTap: _cancelReply,
               borderRadius: BorderRadius.circular(12),
-              child: const Padding(
-                padding: EdgeInsets.all(2),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
                 child: Icon(Icons.close, size: 16, color: AppColors.steel),
               ),
             ),
@@ -392,11 +444,12 @@ class _Thread {
 /// A single comment row: avatar placeholder, username + timestamp, body, and a
 /// "Reply" affordance. Reused for both top-level comments and replies.
 class _CommentTile extends StatelessWidget {
-  const _CommentTile({required this.comment, required this.onReply, this.onMore});
+  const _CommentTile({required this.comment, required this.onReply, this.onMore, this.onDelete});
 
   final PostComment comment;
   final VoidCallback onReply;
   final VoidCallback? onMore;
+  final VoidCallback? onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -447,20 +500,42 @@ class _CommentTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
-                InkWell(
-                  onTap: onReply,
-                  borderRadius: BorderRadius.circular(6),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                    child: Text(
-                      'Reply',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.steel,
+                Row(
+                  children: [
+                    InkWell(
+                      onTap: onReply,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+                        child: Text(
+                          'Reply',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.steel,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
+                    if (onDelete != null) ...[
+                      const SizedBox(width: 4),
+                      InkWell(
+                        onTap: onDelete,
+                        borderRadius: BorderRadius.circular(8),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+                          child: Text(
+                            'Delete',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.danger,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -487,7 +562,7 @@ class _Avatar extends StatelessWidget {
       width: 32,
       height: 32,
       alignment: Alignment.center,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: AppColors.graphiteRaised,
         shape: BoxShape.circle,
       ),

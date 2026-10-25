@@ -9,6 +9,7 @@ import 'package:torqueden/models/build_entry.dart';
 import 'package:torqueden/models/car.dart';
 import 'package:torqueden/models/post_media.dart';
 import 'package:torqueden/theme.dart';
+import 'package:torqueden/utils/image_compress.dart';
 import 'package:torqueden/utils/link_guard.dart';
 import 'package:torqueden/widgets/empty_state.dart';
 import 'package:torqueden/widgets/post_media_view.dart';
@@ -47,7 +48,9 @@ class _BuildTabState extends State<BuildTab> {
   /// Only the car's owner can add/edit/delete build updates.
   bool get _canManage {
     final uid = _client.auth.currentUser?.id;
-    return uid != null && widget.car.ownerId != null && uid == widget.car.ownerId;
+    return uid != null &&
+        widget.car.ownerId != null &&
+        uid == widget.car.ownerId;
   }
 
   @override
@@ -78,7 +81,7 @@ class _BuildTabState extends State<BuildTab> {
     await future;
   }
 
-  Future<void> _openEditor({BuildEntry? entry}) async {
+  Future<void> _openEditor({BuildEntry? entry, String? category}) async {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -86,7 +89,11 @@ class _BuildTabState extends State<BuildTab> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => _BuildEntrySheet(carId: widget.car.id, entry: entry),
+      builder: (_) => _BuildEntrySheet(
+        carId: widget.car.id,
+        entry: entry,
+        initialCategory: category,
+      ),
     );
     if (saved == true) {
       await _refresh();
@@ -100,7 +107,7 @@ class _BuildTabState extends State<BuildTab> {
         backgroundColor: AppColors.graphite,
         title: Text(
           'Delete this update?',
-          style: GoogleFonts.archivo(
+          style: GoogleFonts.spaceGrotesk(
             fontWeight: FontWeight.w700,
             color: AppColors.cream,
           ),
@@ -136,9 +143,9 @@ class _BuildTabState extends State<BuildTab> {
       await _client.from('build_entries').delete().eq('id', entry.id);
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: ${e.message}')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Delete failed: ${e.message}')));
       return;
     } catch (e) {
       if (!mounted) return;
@@ -280,10 +287,18 @@ class _BuildTabState extends State<BuildTab> {
                     label: const Text('Add update'),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.ember,
-                      side: const BorderSide(color: AppColors.hairline),
-                      textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      side: BorderSide(color: AppColors.hairline),
+                      textStyle: GoogleFonts.inter(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ),
@@ -304,6 +319,12 @@ class _BuildTabState extends State<BuildTab> {
                             label: k,
                             entries: grouped[k]!,
                             onOpen: () => _openCategory(k, grouped[k]!),
+                            onAdd: _canManage
+                                ? () => _openEditor(
+                                      category:
+                                          k == _generalLabel ? null : k,
+                                    )
+                                : null,
                           ),
                         ),
                     ],
@@ -326,11 +347,16 @@ class _CategoryCard extends StatelessWidget {
     required this.label,
     required this.entries,
     required this.onOpen,
+    this.onAdd,
   });
 
   final String label;
   final List<BuildEntry> entries;
   final VoidCallback onOpen;
+
+  /// Owner-only: opens the composer preset to this card's category. When
+  /// null (a viewer), spare slots stay as quiet placeholders.
+  final VoidCallback? onAdd;
 
   static const _slots = 2;
 
@@ -344,11 +370,7 @@ class _CategoryCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.fromLTRB(12, 10, 10, 8),
-        decoration: BoxDecoration(
-          color: AppColors.graphite,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.hairline),
-        ),
+        decoration: AppDecorations.glassCard(radius: 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -379,9 +401,8 @@ class _CategoryCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             for (final e in visible) _EntrySlot(entry: e),
-            // Faint placeholders fill an under-filled card up to the slot count
-            // so cards paired in a row line up and the grid reads evenly.
-            for (var i = visible.length; i < _slots; i++) const _GhostSlot(),
+            for (var i = visible.length; i < _slots; i++)
+              if (onAdd != null) _AddSlot(onTap: onAdd!),
             // Reserve a matching bottom row on every card — a centred three-dot
             // hint when there are more mods than shown, else an empty spacer —
             // so collapsed cards stay level.
@@ -389,8 +410,12 @@ class _CategoryCard extends StatelessWidget {
               height: 22,
               width: double.infinity,
               child: hasMore
-                  ? const Center(
-                      child: Icon(Icons.more_horiz, size: 18, color: AppColors.steel),
+                  ? Center(
+                      child: Icon(
+                        Icons.more_horiz,
+                        size: 18,
+                        color: AppColors.steel,
+                      ),
                     )
                   : null,
             ),
@@ -418,7 +443,10 @@ class _EntrySlot extends StatelessWidget {
             width: 6,
             height: 6,
             margin: const EdgeInsets.only(right: 8),
-            decoration: const BoxDecoration(color: AppColors.ember, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: AppColors.ember,
+              shape: BoxShape.circle,
+            ),
           ),
           Expanded(
             child: Column(
@@ -436,53 +464,109 @@ class _EntrySlot extends StatelessWidget {
                 ),
                 Text(
                   _formatDate(entry.createdAt),
-                  style: GoogleFonts.inter(fontSize: 11, color: AppColors.textMuted),
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: AppColors.textMuted,
+                  ),
                 ),
               ],
             ),
           ),
           if (entry.hasMedia)
-            const Icon(Icons.photo_outlined, size: 14, color: AppColors.steel),
+            Icon(Icons.photo_outlined, size: 14, color: AppColors.steel),
         ],
       ),
     );
   }
 }
 
-/// A faint, empty placeholder occupying one slot — used to pad short cards so
-/// the grid rows line up. Matches an [_EntrySlot]'s footprint.
-class _GhostSlot extends StatelessWidget {
-  const _GhostSlot();
+/// Owner version of a spare slot: a dashed "+ Add entry" that opens the
+/// composer preset to the card's category. Same footprint as [_EntrySlot].
+class _AddSlot extends StatelessWidget {
+  const _AddSlot({required this.onTap});
+
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              color: AppColors.hairline.withValues(alpha: 0.6),
-              shape: BoxShape.circle,
-            ),
-          ),
-          Expanded(
-            child: Container(
-              height: 32,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.hairline.withValues(alpha: 0.5)),
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Row(
+          children: [
+            const SizedBox(width: 14), // aligns with the entry-dot column
+            Expanded(
+              child: CustomPaint(
+                painter: _DashedBorderPainter(
+                  color: AppColors.ember.withValues(alpha: 0.45),
+                  radius: 8,
+                ),
+                child: SizedBox(
+                  height: 44,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.add, size: 14, color: AppColors.ember),
+                      const SizedBox(width: 5),
+                      Text(
+                        'Add entry',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.ember,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
+
+/// Paints a dashed rounded-rect outline (Flutter borders can't dash natively).
+class _DashedBorderPainter extends CustomPainter {
+  const _DashedBorderPainter({required this.color, this.radius = 8});
+
+  final Color color;
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    );
+    final path = Path()..addRRect(rrect.deflate(0.5));
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    const dash = 4.0, gap = 4.0;
+    for (final metric in path.computeMetrics()) {
+      var d = 0.0;
+      while (d < metric.length) {
+        canvas.drawPath(
+          metric.extractPath(d, (d + dash).clamp(0, metric.length)),
+          paint,
+        );
+        d += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorderPainter old) =>
+      old.color != color || old.radius != radius;
+}
+
 
 /// Bottom sheet listing every mod in one category — opened by tapping a card.
 class _CategorySheet extends StatelessWidget {
@@ -527,7 +611,12 @@ class _CategorySheet extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    entries.length == 1 ? '1 mod' : '${entries.length} mods',
+                    () {
+                      final isModCat = label.toLowerCase() != 'general';
+                      final word = isModCat ? 'mod' : 'entry';
+                      final plural = isModCat ? 'mods' : 'entries';
+                      return entries.length == 1 ? '1 $word' : '${entries.length} $plural';
+                    }(),
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -543,7 +632,7 @@ class _CategorySheet extends StatelessWidget {
                 padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                 itemCount: entries.length,
                 separatorBuilder: (_, _) =>
-                    const Divider(color: AppColors.hairline, height: 28),
+                    Divider(color: AppColors.hairline, height: 28),
                 itemBuilder: (_, i) => _EntryDetailBlock(
                   entry: entries[i],
                   canManage: canManage,
@@ -594,7 +683,7 @@ class _EntryDetailBlock extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           entry.title,
-          style: GoogleFonts.archivo(
+          style: GoogleFonts.spaceGrotesk(
             fontWeight: FontWeight.w700,
             fontSize: 18,
             color: AppColors.cream,
@@ -608,7 +697,11 @@ class _EntryDetailBlock extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             body,
-            style: GoogleFonts.inter(fontSize: 15, color: AppColors.textSecondary, height: 1.5),
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              color: AppColors.textSecondary,
+              height: 1.5,
+            ),
           ),
         ],
         if (entry.hasLinkedMod) ...[
@@ -626,7 +719,7 @@ class _EntryDetailBlock extends StatelessWidget {
                   label: const Text('Edit'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.ember,
-                    side: const BorderSide(color: AppColors.hairline),
+                    side: BorderSide(color: AppColors.hairline),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
@@ -639,7 +732,7 @@ class _EntryDetailBlock extends StatelessWidget {
                   label: const Text('Delete'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.danger,
-                    side: const BorderSide(color: AppColors.hairline),
+                    side: BorderSide(color: AppColors.hairline),
                     padding: const EdgeInsets.symmetric(vertical: 10),
                   ),
                 ),
@@ -662,11 +755,7 @@ class LinkedModChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.graphiteRaised,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.hairline),
-      ),
+      decoration: AppDecorations.glassCard(radius: 999),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -693,10 +782,14 @@ class LinkedModChip extends StatelessWidget {
 /// Bottom sheet to add or edit a build-log update. Pops `true` after a
 /// successful save. Pass [entry] to edit an existing update.
 class _BuildEntrySheet extends StatefulWidget {
-  const _BuildEntrySheet({required this.carId, this.entry});
+  const _BuildEntrySheet({required this.carId, this.entry, this.initialCategory});
 
   final String carId;
   final BuildEntry? entry;
+
+  /// Preselects the category dropdown for new entries (e.g. tapping
+  /// "+ Add entry" on the Exterior card). Ignored when editing.
+  final String? initialCategory;
 
   @override
   State<_BuildEntrySheet> createState() => _BuildEntrySheetState();
@@ -730,6 +823,8 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
       _body.text = e.body ?? '';
       _category = e.category;
       _existing.addAll(e.media);
+    } else {
+      _category = widget.initialCategory;
     }
   }
 
@@ -748,8 +843,16 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
     if (files.isEmpty) return;
     final added = <({String name, Uint8List bytes, bool isVideo})>[];
     for (final f in files) {
-      final ext = f.name.contains('.') ? f.name.split('.').last.toLowerCase() : '';
-      added.add((name: f.name, bytes: await f.readAsBytes(), isVideo: _videoExts.contains(ext)));
+      final ext = f.name.contains('.')
+          ? f.name.split('.').last.toLowerCase()
+          : '';
+      final isVideo = _videoExts.contains(ext);
+      final raw = await f.readAsBytes();
+      added.add((
+        name: f.name,
+        bytes: isVideo ? raw : await compressImageBytes(raw),
+        isVideo: isVideo,
+      ));
     }
     if (!mounted) return;
     setState(() => _media.addAll(added));
@@ -759,7 +862,9 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
     if (!_formKey.currentState!.validate()) return;
     // Build updates are promotion-free — links belong on a Partner Page.
     if (containsUrl(_title.text) || containsUrl(_body.text)) {
-      _fail('Links aren\'t allowed in build updates. Businesses can add their website on a Partner Page.');
+      _fail(
+        'Links aren\'t allowed in build updates. Businesses can add their website on a Partner Page.',
+      );
       return;
     }
     setState(() => _saving = true);
@@ -775,14 +880,20 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
         // Update text fields in place; leave the silent/created_at values as-is.
         entryId = widget.entry!.id;
         mediaStart = widget.entry!.media.length;
-        await client.from('build_entries').update({
-          'title': title,
-          'body': body.isEmpty ? null : body,
-          'category': _category,
-        }).eq('id', entryId);
+        await client
+            .from('build_entries')
+            .update({
+              'title': title,
+              'body': body.isEmpty ? null : body,
+              'category': _category,
+            })
+            .eq('id', entryId);
         // Drop any existing media the user removed.
         if (_removedMediaIds.isNotEmpty) {
-          await client.from('post_media').delete().inFilter('id', _removedMediaIds.toList());
+          await client
+              .from('post_media')
+              .delete()
+              .inFilter('id', _removedMediaIds.toList());
         }
       } else {
         // .select() so the future completes (esp. on web) and returns the row id.
@@ -820,7 +931,9 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                 };
           final pos = mediaStart + i; // append after any existing media
           final path = '$uid/${entryId}_$pos.$ext';
-          await client.storage.from('car-photos').uploadBinary(
+          await client.storage
+              .from('car-photos')
+              .uploadBinary(
                 path,
                 m.bytes,
                 fileOptions: FileOptions(contentType: contentType),
@@ -879,7 +992,7 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
               children: [
                 Text(
                   _isEditing ? 'Edit update' : 'Add update',
-                  style: GoogleFonts.archivo(
+                  style: GoogleFonts.spaceGrotesk(
                     fontWeight: FontWeight.w700,
                     fontSize: 20,
                     color: AppColors.cream,
@@ -889,22 +1002,32 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                 DropdownButtonFormField<String?>(
                   initialValue: _category,
                   isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Category (optional)'),
+                  decoration: const InputDecoration(
+                    labelText: 'Category (optional)',
+                  ),
                   dropdownColor: AppColors.graphiteRaised,
-                  style: GoogleFonts.inter(color: AppColors.cream, fontSize: 15),
+                  style: GoogleFonts.inter(
+                    color: AppColors.cream,
+                    fontSize: 15,
+                  ),
                   iconEnabledColor: AppColors.steel,
                   items: [
                     DropdownMenuItem<String?>(
                       value: null,
                       child: Text(
                         'General update',
-                        style: GoogleFonts.inter(color: AppColors.textSecondary, fontSize: 15),
+                        style: GoogleFonts.inter(
+                          color: AppColors.textSecondary,
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                     for (final c in kModCategories)
                       DropdownMenuItem<String?>(value: c, child: Text(c)),
                   ],
-                  onChanged: _saving ? null : (v) => setState(() => _category = v),
+                  onChanged: _saving
+                      ? null
+                      : (v) => setState(() => _category = v),
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
@@ -930,8 +1053,14 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                   const SizedBox(height: 14),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('Current media',
-                        style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, fontWeight: FontWeight.w600)),
+                    child: Text(
+                      'Current media',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
@@ -947,9 +1076,9 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                           onRemove: _saving
                               ? null
                               : () => setState(() {
-                                    _removedMediaIds.add(m.id);
-                                    _existing.remove(m);
-                                  }),
+                                  _removedMediaIds.add(m.id);
+                                  _existing.remove(m);
+                                }),
                         );
                       },
                     ),
@@ -960,13 +1089,25 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                   alignment: Alignment.centerLeft,
                   child: OutlinedButton.icon(
                     onPressed: _saving ? null : _addMedia,
-                    icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
-                    label: Text(_media.isEmpty && _existing.isEmpty ? 'Add photos / video' : 'Add more'),
+                    icon: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 20,
+                    ),
+                    label: Text(
+                      _media.isEmpty && _existing.isEmpty
+                          ? 'Add photos / video'
+                          : 'Add more',
+                    ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.ember,
-                      side: const BorderSide(color: AppColors.hairline),
-                      textStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      side: BorderSide(color: AppColors.hairline),
+                      textStyle: GoogleFonts.inter(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
                 ),
@@ -981,18 +1122,24 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                       itemBuilder: (_, i) => _MediaThumb(
                         bytes: _media[i].bytes,
                         isVideo: _media[i].isVideo,
-                        onRemove: _saving ? null : () => setState(() => _media.removeAt(i)),
+                        onRemove: _saving
+                            ? null
+                            : () => setState(() => _media.removeAt(i)),
                       ),
                     ),
                   ),
                 ],
                 const SizedBox(height: 24),
                 if (_saving)
-                  const Center(child: CircularProgressIndicator(color: AppColors.ember))
+                  const Center(
+                    child: CircularProgressIndicator(color: AppColors.ember),
+                  )
                 else if (_isEditing)
                   FilledButton(
                     onPressed: () => _save(),
-                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                    ),
                     child: const Text('Save changes'),
                   )
                 else
@@ -1002,32 +1149,42 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
                         flex: 3,
                         child: FilledButton.icon(
                           onPressed: () => _save(silent: false),
-                          icon: const Icon(Icons.local_fire_department, size: 18),
+                          icon: const Icon(
+                            Icons.local_fire_department,
+                            size: 18,
+                          ),
                           label: const Text('Post update'),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         flex: 2,
-                        child: OutlinedButton(
+                        child: OutlinedButton.icon(
                           onPressed: () => _save(silent: true),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: AppColors.steel,
-                            side: const BorderSide(color: AppColors.hairline),
+                            side: BorderSide(color: AppColors.hairline),
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
                           ),
-                          child: const Text('Silent'),
+                          icon: const Icon(Icons.notifications_off_outlined, size: 16),
+                          label: const Text('Silent'),
                         ),
                       ),
                     ],
                   ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
                   _isEditing
                       ? 'Existing photos and videos are kept; anything you add here is appended.'
-                      : 'Silent updates save to the build log but stay off your followers’ feeds.',
-                  style: GoogleFonts.inter(fontSize: 12, color: AppColors.textMuted, height: 1.4),
+                      : 'Silent saves to your build log without notifying followers.',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
                 ),
                 const SizedBox(height: 8),
               ],
@@ -1042,7 +1199,11 @@ class _BuildEntrySheetState extends State<_BuildEntrySheet> {
 /// A square preview of a chosen-but-not-yet-uploaded photo or video, with a
 /// remove "x" (and a play badge for videos, which can't preview a frame here).
 class _MediaThumb extends StatelessWidget {
-  const _MediaThumb({required this.bytes, required this.isVideo, this.onRemove});
+  const _MediaThumb({
+    required this.bytes,
+    required this.isVideo,
+    this.onRemove,
+  });
 
   final Uint8List bytes;
   final bool isVideo;
@@ -1060,28 +1221,40 @@ class _MediaThumb extends StatelessWidget {
                   height: 84,
                   color: AppColors.graphiteRaised,
                   alignment: Alignment.center,
-                  child: const Icon(Icons.videocam, color: AppColors.steel, size: 28),
+                  child: Icon(
+                    Icons.videocam,
+                    color: AppColors.steel,
+                    size: 28,
+                  ),
                 )
               : Image.memory(bytes, width: 84, height: 84, fit: BoxFit.cover),
         ),
         if (isVideo)
-          const Positioned(
+          Positioned(
             left: 6,
             bottom: 6,
-            child: Icon(Icons.play_circle_fill, color: Colors.white70, size: 20),
+            child: Icon(
+              Icons.play_circle_fill,
+              color: AppColors.cream,
+              size: 20,
+            ),
           ),
         Positioned(
-          top: 4,
-          right: 4,
+          top: 0,
+          right: 0,
           child: GestureDetector(
             onTap: onRemove,
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.6),
-                shape: BoxShape.circle,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.close, size: 15, color: AppColors.cream),
               ),
-              child: const Icon(Icons.close, size: 15, color: AppColors.cream),
             ),
           ),
         ),
@@ -1110,10 +1283,14 @@ class _ExistingThumb extends StatelessWidget {
                   height: 84,
                   color: AppColors.graphiteRaised,
                   alignment: Alignment.center,
-                  child: const Icon(Icons.videocam, color: AppColors.steel, size: 28),
+                  child: Icon(
+                    Icons.videocam,
+                    color: AppColors.steel,
+                    size: 28,
+                  ),
                 )
               : Image.network(
-                  media.url,
+                  media.thumbnailUrl(width: 200),
                   width: 84,
                   height: 84,
                   fit: BoxFit.cover,
@@ -1122,28 +1299,40 @@ class _ExistingThumb extends StatelessWidget {
                     height: 84,
                     color: AppColors.graphiteRaised,
                     alignment: Alignment.center,
-                    child: const Icon(Icons.broken_image_outlined, color: AppColors.steel, size: 24),
+                    child: Icon(
+                      Icons.broken_image_outlined,
+                      color: AppColors.steel,
+                      size: 24,
+                    ),
                   ),
                 ),
         ),
         if (media.isVideo)
-          const Positioned(
+          Positioned(
             left: 6,
             bottom: 6,
-            child: Icon(Icons.play_circle_fill, color: Colors.white70, size: 20),
+            child: Icon(
+              Icons.play_circle_fill,
+              color: AppColors.cream,
+              size: 20,
+            ),
           ),
         Positioned(
-          top: 4,
-          right: 4,
+          top: 0,
+          right: 0,
           child: GestureDetector(
             onTap: onRemove,
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.6),
-                shape: BoxShape.circle,
+            behavior: HitTestBehavior.opaque,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.6),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.close, size: 15, color: AppColors.cream),
               ),
-              child: const Icon(Icons.close, size: 15, color: AppColors.cream),
             ),
           ),
         ),

@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TorqueDen — Where the build lives.</title>
+<meta name="description" content="TorqueDen is the digital garage-clubhouse for car people. Show your build, log your mods, swap specs and advice, find your crew.">
+
+<meta property="og:title" content="TorqueDen — Where the build lives.">
+<meta property="og:description" content="The digital garage-clubhouse for car people. Show your build, log your mods, find your crew.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --td-bg:          #15171B;
+    --td-surface:     #1C2026;
+    --td-surface-2:   #23272E;
+    --td-border:      #2C313A;
+    --td-ember:       #FF6A2B;
+    --td-ember-hover: #F2581C;
+    --td-on-ember:    #2A0F04;
+    --td-steel:       #7C8B99;
+    --td-text:        #F3ECE1;
+    --td-text-2:      #9AA3AD;
+    --td-text-muted:  #8A929C;
+    --td-radius:      8px;
+    --td-radius-card: 12px;
+    --td-radius-pill: 999px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--td-bg);
+    color: var(--td-text);
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  h1, h2, h3, .display {
+    font-family: 'Archivo', system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  a { color: var(--td-ember); text-decoration: none; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* Nav */
+  nav {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(21,23,27,0.9);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--td-border);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-family: 'Archivo'; font-weight: 800; font-size: 22px; }
+  .brand .t { color: var(--td-text); } .brand .d { color: var(--td-ember); }
+  nav .links { display: flex; gap: 28px; align-items: center; }
+  nav .links a { color: var(--td-text-2); font-size: 14px; font-weight: 500; }
+  nav .links a:hover { color: var(--td-text); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 12px 22px; border-radius: var(--td-radius); font-weight: 600; font-size: 15px;
+    border: 1px solid transparent; cursor: pointer; transition: background .15s ease;
+  }
+  .btn-primary { background: var(--td-ember); color: var(--td-on-ember); }
+  .btn-primary:hover { background: var(--td-ember-hover); }
+  .btn-ghost { background: transparent; border-color: var(--td-border); color: var(--td-text); }
+  .btn-ghost:hover { background: var(--td-surface); }
+  .btn-sm { padding: 9px 16px; font-size: 14px; }
+
+  /* Hero */
+  header.hero { padding: 96px 0 72px; position: relative; overflow: hidden; }
+  header.hero::before {
+    content: ""; position: absolute; top: -200px; right: -160px; width: 560px; height: 560px;
+    background: radial-gradient(circle, rgba(255,106,43,0.14) 0%, rgba(255,106,43,0) 70%);
+    pointer-events: none;
+  }
+  .hero-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 56px; align-items: center; position: relative; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: var(--td-radius-pill);
+    border: 1px solid var(--td-border); color: var(--td-steel); font-size: 13px; font-weight: 500; margin-bottom: 22px;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--td-ember); }
+  h1.headline { font-size: 52px; line-height: 1.08; margin-bottom: 20px; }
+  h1.headline .ember { color: var(--td-ember); }
+  p.sub { font-size: 18px; color: var(--td-text-2); max-width: 480px; margin-bottom: 32px; }
+  .hero-ctas { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+  .hero-note { font-size: 13px; color: var(--td-text-muted); }
+  .hero-phone { display: flex; justify-content: center; position: relative; }
+  .phone-frame {
+    width: 280px; border-radius: 34px; border: 6px solid #0d0e11; box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+    overflow: hidden; background: #000;
+  }
+  .phone-frame img { display: block; width: 100%; }
+  .phone-glow {
+    position: absolute; width: 320px; height: 320px; background: radial-gradient(circle, rgba(255,106,43,0.18), transparent 70%);
+    z-index: -1;
+  }
+
+  /* Sections */
+  section { padding: 88px 0; }
+  section.alt { background: var(--td-surface); border-top: 1px solid var(--td-border); border-bottom: 1px solid var(--td-border); }
+  .section-head { max-width: 620px; margin: 0 auto 56px; text-align: center; }
+  .section-head .kicker { color: var(--td-ember); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 12px; display: block; }
+  .section-head h2 { font-size: 34px; margin-bottom: 14px; }
+  .section-head p { color: var(--td-text-2); font-size: 16px; }
+
+  .feature-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center; margin-bottom: 96px;
+  }
+  .feature-row:last-child { margin-bottom: 0; }
+  .feature-row.reverse .feature-copy { order: 2; }
+  .feature-row.reverse .feature-shot { order: 1; }
+  .feature-copy .icon-badge {
+    width: 44px; height: 44px; border-radius: var(--td-radius); background: rgba(255,106,43,0.12);
+    color: var(--td-ember); display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 18px;
+  }
+  .feature-copy h3 { font-size: 24px; margin-bottom: 12px; }
+  .feature-copy p { color: var(--td-text-2); margin-bottom: 0; }
+  .feature-shot { display: flex; justify-content: center; }
+  .shot-frame {
+    width: 240px; border-radius: 28px; border: 5px solid #0d0e11; box-shadow: 0 24px 60px rgba(0,0,0,0.45); overflow: hidden;
+  }
+  .shot-frame img { display: block; width: 100%; }
+
+  /* Grid features (small) */
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .mini-card {
+    background: var(--td-bg); border: 1px solid var(--td-border); border-radius: var(--td-radius-card); padding: 24px;
+  }
+  .mini-card .icon-badge {
+    width: 40px; height: 40px; border-radius: var(--td-radius); background: rgba(255,106,43,0.12);
+    color: var(--td-ember); display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: 16px;
+  }
+  .mini-card h3 { font-size: 17px; margin-bottom: 8px; }
+  .mini-card p { color: var(--td-text-2); font-size: 14px; margin: 0; }
+
+  /* Clubs strip */
+  .club-strip { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  .club-pill {
+    display: flex; align-items: center; gap: 10px; padding: 10px 18px; border-radius: var(--td-radius-pill);
+    border: 1px solid var(--td-border); background: var(--td-bg); font-weight: 600; font-size: 14px;
+  }
+  .club-pill .avatar {
+    width: 26px; height: 26px; border-radius: 6px; background: rgba(255,106,43,0.15); color: var(--td-ember);
+    display: flex; align-items: center; justify-content: center; font-family: 'Archivo'; font-weight: 800; font-size: 13px;
+  }
+
+  /* CTA band */
+  .cta-band {
+    text-align: center; border: 1px solid var(--td-border); border-radius: 20px; padding: 64px 40px;
+    background: linear-gradient(180deg, rgba(255,106,43,0.06), transparent);
+  }
+  .cta-band h2 { font-size: 30px; margin-bottom: 14px; }
+  .cta-band p { color: var(--td-text-2); max-width: 480px; margin: 0 auto 30px; }
+  .store-badges { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 28px; }
+  .store-badge {
+    display: flex; align-items: center; gap: 10px; border: 1px solid var(--td-border); border-radius: var(--td-radius);
+    padding: 10px 18px; color: var(--td-text-muted); font-size: 13px; opacity: 0.7;
+  }
+
+  /* Footer */
+  footer { border-top: 1px solid var(--td-border); padding: 48px 0 32px; }
+  .footer-grid { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 24px; margin-bottom: 32px; }
+  .footer-links { display: flex; gap: 24px; flex-wrap: wrap; }
+  .footer-links a { color: var(--td-text-2); font-size: 14px; }
+  .footer-links a:hover { color: var(--td-text); }
+  .footer-bottom { color: var(--td-text-muted); font-size: 13px; }
+
+  @media (max-width: 860px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-phone { order: -1; margin-bottom: 12px; }
+    h1.headline { font-size: 38px; }
+    .feature-row, .feature-row.reverse { grid-template-columns: 1fr; }
+    .feature-row.reverse .feature-copy, .feature-row.reverse .feature-shot { order: initial; }
+    .grid-3 { grid-template-columns: 1fr; }
+    nav .links { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="t">Torque</span><span class="d">Den</span></div>
+    <div class="links">
+      <a href="#features">Features</a>
+      <a href="#clubs">Clubs</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <a class="btn btn-primary btn-sm" href="#waitlist">Get early access</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow"><span class="dot"></span> Building in public — early access opening soon</span>
+      <h1 class="headline">Where the <span class="ember">build</span> lives.</h1>
+      <p class="sub">TorqueDen is the digital garage-clubhouse for car people. Show your build, log your mods, swap specs and advice, and find your crew.</p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="#waitlist">Get early access</a>
+        <a class="btn btn-ghost" href="https://www.instagram.com/torquedenapp" target="_blank" rel="noopener">Follow the build</a>
+      </div>
+      <p class="hero-note">Free to join. No spend required — a stock daily and a full restomod both belong here.</p>
+    </div>
+    <div class="hero-phone">
+      <div class="phone-glow"></div>
+      <div class="phone-frame"><img src="screenshots/01_feed.png" alt="TorqueDen home feed showing car builds"></div>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker">What you can do</span>
+      <h2>Your garage. Your crew.</h2>
+      <p>Every car gets a profile, and its history follows it across owners — mods, specs, and the story behind the build.</p>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-copy">
+        <div class="icon-badge">&#128269;</div>
+        <h3>Discover builds like yours</h3>
+        <p>Search by make, model, or chassis, browse a "For you" feed tuned to what you drive, or switch on "Near me" to find builds and meets in your area.</p>
+      </div>
+      <div class="feature-shot"><div class="shot-frame"><img src="screenshots/02_discover.png" alt="TorqueDen Discover tab with search and near me"></div></div>
+    </div>
+
+    <div class="feature-row reverse">
+      <div class="feature-copy">
+        <div class="icon-badge">&#128295;</div>
+        <h3>Real specs, not guesswork</h3>
+        <p>Make, model, chassis, year, colour — and a full performance sheet: induction, engine, and every spec that matters to the build.</p>
+      </div>
+      <div class="feature-shot"><div class="shot-frame"><img src="screenshots/03_car_specs.png" alt="TorqueDen car specs screen for a Mazda RX-7"></div></div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-copy">
+        <div class="icon-badge">&#128220;</div>
+        <h3>Log every stage of the build</h3>
+        <p>Engine and tune, exterior, general work — organised by category with dates, so the build log tells the whole story, from stock to Stage 2 and climbing.</p>
+      </div>
+      <div class="feature-shot"><div class="shot-frame"><img src="screenshots/04_build_log.png" alt="TorqueDen build log grouped by category"></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="clubs">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker">Find your people</span>
+      <h2>Clubs for every marque</h2>
+      <p>Join the communities built around what you drive — swap advice, share builds, and meet other owners.</p>
+    </div>
+    <div class="club-strip">
+      <div class="club-pill"><span class="avatar">S</span> Subaru</div>
+      <div class="club-pill"><span class="avatar">H</span> Honda</div>
+      <div class="club-pill"><span class="avatar">B</span> BMW</div>
+      <div class="club-pill"><span class="avatar">V</span> Volkswagen</div>
+      <div class="club-pill"><span class="avatar">A</span> Audi</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="section-head">
+      <span class="kicker">Why TorqueDen</span>
+      <h2>Knowledgeable, never gatekeeping</h2>
+      <p>As welcoming to a first-time modder as to a seasoned builder.</p>
+    </div>
+    <div class="grid-3">
+      <div class="mini-card">
+        <div class="icon-badge">&#128293;</div>
+        <h3>Flame, don't just like</h3>
+        <p>Reactions that fit the culture — tap to give a build a flame.</p>
+      </div>
+      <div class="mini-card">
+        <div class="icon-badge">&#128663;</div>
+        <h3>Every car has a history</h3>
+        <p>A car's profile and build log follow it across owners, not just the person posting.</p>
+      </div>
+      <div class="mini-card">
+        <div class="icon-badge">&#128101;</div>
+        <h3>No rank, no gatekeeping</h3>
+        <p>Builds aren't ranked by spend. A stock daily and a full restomod both belong.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="waitlist">
+  <div class="wrap">
+    <div class="cta-band">
+      <h2>Pull up. Show your build.</h2>
+      <p>TorqueDen is heading to iOS and Android. Follow along on Instagram or drop your email for early access — first look goes to the crew that showed up early.</p>
+      <div class="hero-ctas" style="justify-content:center;">
+        <a class="btn btn-primary" href="mailto:torquedenapp@gmail.com?subject=Early%20access%20—%20TorqueDen">Get early access</a>
+        <a class="btn btn-ghost" href="https://www.instagram.com/torquedenapp" target="_blank" rel="noopener">Follow on Instagram</a>
+      </div>
+      <div class="store-badges">
+        <span class="store-badge">&#128241; iOS — coming soon</span>
+        <span class="store-badge">&#129302; Android — coming soon</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer id="faq">
+  <div class="wrap">
+    <div class="footer-grid">
+      <div class="brand" style="font-size:18px;"><span class="t">Torque</span><span class="d">Den</span></div>
+      <div class="footer-links">
+        <a href="https://welchyuk-stack.github.io/torqueden-legal/privacy-policy.html" target="_blank" rel="noopener">Privacy Policy</a>
+        <a href="https://welchyuk-stack.github.io/torqueden-legal/terms-of-service.html" target="_blank" rel="noopener">Terms of Service</a>
+        <a href="https://welchyuk-stack.github.io/torqueden-legal/community-guidelines.html" target="_blank" rel="noopener">Community Guidelines</a>
+        <a href="https://www.instagram.com/torquedenapp" target="_blank" rel="noopener">Instagram</a>
+        <a href="mailto:torquedenapp@gmail.com">Contact</a>
+      </div>
+    </div>
+    <div class="footer-bottom">&copy; 2026 TorqueDen &middot; torquedenapp@gmail.com</div>
+  </div>
+</footer>
+
+</body>
+</html>

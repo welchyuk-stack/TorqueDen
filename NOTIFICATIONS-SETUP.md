@@ -20,44 +20,49 @@ event (follow/comment/like/thread/reply)
 ## 1. Apply the migrations
 Via the Supabase Management API (this project isn't CLI-linked — see the
 supabase memory) or the dashboard SQL editor:
-- [ ] `supabase/migrations/0021_notifications.sql` (inbox — table + triggers)
-- [ ] `supabase/migrations/0022_device_tokens.sql` (push — device tokens)
+- [x] `supabase/migrations/0021_notifications.sql` (inbox — table + triggers) — APPLIED
+- [x] `supabase/migrations/0022_device_tokens.sql` (push — device tokens) — APPLIED
 
-Once 0021 is applied, the **in-app inbox is fully live**. Everything below is
-for remote push only.
+In-app inbox is live. Everything below is for remote push only.
 
-## 2. Firebase project (push)
-- [ ] Create a Firebase project (use the `torquedenapp@gmail.com` Google account).
+## 2. Firebase project (push) — **YOUR ACTION**
+- [ ] Create a Firebase project at https://console.firebase.google.com
+      (use the `torquedenapp@gmail.com` Google account).
 - [ ] Add an **iOS app** with bundle id `com.torqueden.app`.
-- [ ] Download **GoogleService-Info.plist** → add to `ios/Runner/` (in Xcode,
-      add to the Runner target).
-- [ ] In Apple Developer → create an **APNs Auth Key (.p8)**; upload it to
-      Firebase → Project Settings → Cloud Messaging → Apple app configuration.
-      *(Requires the Apple Developer Program — pending.)*
-- [ ] Generate a **service-account key** (Project Settings → Service accounts →
-      Generate new private key) → this JSON is `FCM_SERVICE_ACCOUNT` below.
+- [ ] Download **GoogleService-Info.plist** → add to `ios/TorqueDen/` in Xcode
+      (drag into the Runner target, copy items if needed).
+- [ ] In Apple Developer → Keys → create an **APNs Auth Key (.p8)**;
+      upload it to Firebase → Project Settings → Cloud Messaging →
+      Apple app configuration.
+- [ ] Generate a **service-account key** (Firebase Project Settings →
+      Service accounts → Generate new private key) → this JSON is
+      `FCM_SERVICE_ACCOUNT` below.
 
-## 3. iOS capabilities (Xcode)
-- [ ] Signing & Capabilities → add **Push Notifications**.
-- [ ] Add **Background Modes** → check **Remote notifications**.
-- [ ] (APNs entitlement follows automatically from the provisioning profile.)
+## 3. iOS capabilities (Xcode) — **YOUR ACTION**
+- [ ] Open `ios/TorqueDen.xcworkspace` → Runner target → Signing & Capabilities.
+- [ ] Add **Push Notifications** capability.
+- [ ] Add **Background Modes** capability → check **Remote notifications**.
 
-## 4. Deploy the push edge function
-- [ ] `supabase functions deploy send-push --no-verify-jwt`
-- [ ] Secrets:
-  - `supabase secrets set PUSH_WEBHOOK_AUTH=<a-long-random-string>`
-  - `supabase secrets set FCM_SERVICE_ACCOUNT='<service-account JSON on one line>'`
-  - (`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are injected automatically.)
+## 4. Deploy the push edge function — run these commands
+```bash
+supabase functions deploy send-push --no-verify-jwt --project-ref <your-project-ref>
+supabase secrets set PUSH_WEBHOOK_AUTH=<a-long-random-string> --project-ref <your-project-ref>
+supabase secrets set FCM_SERVICE_ACCOUNT='<service-account JSON, all on one line>' --project-ref <your-project-ref>
+```
 
-## 5. Wire the DB webhook
-- [ ] Supabase dashboard → Database → **Webhooks** → create a webhook on
-      **INSERT** to `public.notifications`, HTTP POST to the `send-push`
-      function URL, with header `Authorization: Bearer <PUSH_WEBHOOK_AUTH>`.
+## 5. Wire the DB webhook — Supabase dashboard
+- [ ] Supabase dashboard → Database → **Webhooks** → New webhook.
+  - Table: `public.notifications`, Event: `INSERT`
+  - URL: `https://<project-ref>.supabase.co/functions/v1/send-push`
+  - Header: `Authorization: Bearer <PUSH_WEBHOOK_AUTH>`
 
 ## 6. Flip it on & test
-- [ ] The client already registers the FCM token on login (`PushService`, guarded
-      until Firebase is configured) and drops it on logout. No code change needed
-      once GoogleService-Info.plist is present.
+- [x] Client registers FCM token on login (`PushService`) — no code change needed.
+- [x] Client drops token on logout — done.
+- [ ] Add `GoogleService-Info.plist` to Xcode (step 2 above).
+- [ ] Build + run on a **real device** (push doesn't work in the iOS Simulator).
+- [ ] Trigger a follow event → confirm push arrives on device.
+- [ ] Confirm toggling the matching pref off suppresses the push.
 - [ ] Sandbox-test on a real device (push doesn't work on the iOS Simulator):
       trigger an event (e.g. follow the test account) → confirm an inbox row
       appears AND a push arrives → confirm toggling the matching pref off
